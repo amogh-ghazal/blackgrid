@@ -42,8 +42,18 @@ export async function createGameServer({ dev = false, persist = false, maxRooms 
       let body = '';
       try { for await (const chunk of req) { body += chunk; if (body.length > 12000) throw new Error('Credential too large'); } }
       catch { res.writeHead(413).end(); return; }
-      let credential;
-      try { credential = JSON.parse(body).credential; } catch { res.writeHead(400).end(); return; }
+      let credential, redirectFlow = false;
+      try {
+        const contentType = String(req.headers['content-type'] || '').split(';')[0].trim().toLowerCase();
+        let payload;
+        if (contentType === 'application/x-www-form-urlencoded') {
+          const form = new URLSearchParams(body);
+          const csrfCookie = req.headers.cookie?.match(/(?:^|;\s*)g_csrf_token=([^;]+)/)?.[1];
+          if (!form.get('g_csrf_token') || form.get('g_csrf_token') !== csrfCookie) { res.writeHead(400).end('Invalid sign-in request.'); return; }
+          payload = Object.fromEntries(form); redirectFlow = true;
+        } else payload = JSON.parse(body);
+        credential = payload.credential;
+      } catch { res.writeHead(400).end(); return; }
       if (typeof credential !== 'string' || credential.length > 10000) { res.writeHead(400).end(); return; }
       try {
         const claims = await verifyGoogleCredential(credential, GOOGLE_CLIENT_ID);
@@ -51,6 +61,7 @@ export async function createGameServer({ dev = false, persist = false, maxRooms 
         const user = { sub: String(claims.sub), name: safeText(claims.name, 'Player', 32), email: safeText(claims.email, '', 254) };
         const token = issueSession(user); const secure = process.env.NODE_ENV === 'production' || Boolean(req.socket.encrypted);
         res.setHeader('Set-Cookie', sessionCookie(token, secure)); res.setHeader('Cache-Control', 'no-store'); res.setHeader('Content-Type', 'application/json');
+        if (redirectFlow) { res.writeHead(303, { Location: '/' }).end(); return; }
         res.end(JSON.stringify({ user }));
       } catch (error) { res.writeHead(error.name === 'TimeoutError' || error.message.includes('unavailable') ? 503 : 401).end(JSON.stringify({ error: error.message.includes('unavailable') ? 'Google sign-in is temporarily unavailable. Try again.' : 'Google account verification failed.' })); }
       return;

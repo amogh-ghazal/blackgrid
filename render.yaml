@@ -12,7 +12,7 @@ services:
       - key: HOST
         value: 0.0.0.0
       - key: MAX_ROOMS
-        value: 1
+        value: 5
       - key: PERSIST_LEARNING
         value: 0
       - key: BLACKGRID_MAINTENANCE

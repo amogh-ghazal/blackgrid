@@ -10,7 +10,7 @@ let game, socket = null, state = null, selfId = null, joining = false, intention
 let mouse = { x: innerWidth / 2, y: innerHeight / 2 }, firing = false, firePointer = null, fireTouch = null, keys = new Set(), touchMove = { x: 0, y: 0 }, touchSprint = false, paused = false, pingTimer, frameCount = 0, frameTime = 0, lastFrame = performance.now(), lastRender = performance.now(), renderAccumulator = 0;
 let settings = { quality: 'medium', volume: 45, motion: false, name: '', qualityChosen: false };
 let pendingJoinCode = null, lowFpsNotified = false, micPending = false;
-let account = null, authRequired = true, mobileDevice = navigator.maxTouchPoints > 0 || matchMedia('(pointer: coarse)').matches;
+let account = null, authRequired = true, loginOriginUnsupported = false, mobileDevice = navigator.maxTouchPoints > 0 || matchMedia('(pointer: coarse)').matches;
 try { const saved = JSON.parse(localStorage.getItem('blackgrid-settings') || '{}'); settings = { ...settings, ...saved }; if (saved.qualityChosen !== true) settings.quality = mobileDevice ? 'high' : 'medium'; } catch {}
 if (!['low', 'medium', 'high'].includes(settings.quality)) settings.quality = 'medium';
 if (!settings.name || settings.name.toUpperCase() === 'SURVIVOR') settings.name = '';
@@ -23,6 +23,9 @@ if (invite) $('room-code').value = invite.replace(/[^a-zA-Z0-9]/g, '').slice(0, 
 
 function saveSettings() { try { localStorage.setItem('blackgrid-settings', JSON.stringify(settings)); } catch {} }
 const GOOGLE_CLIENT_ID = '639238474808-kb8fr4gudaskm0596apsqnpg6jns76ho.apps.googleusercontent.com';
+const CANONICAL_GAME_ORIGIN = 'https://blackgrid-5obd.onrender.com';
+const isSupportedLoginOrigin = () => location.origin === CANONICAL_GAME_ORIGIN || (['localhost', '127.0.0.1'].includes(location.hostname) && location.protocol === 'http:');
+const isIOSBrowser = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 function renderAccount() {
   $('auth-status').textContent = account ? 'Signed in as ' + account.name + '. This device stays signed in until you log out.' : 'Sign in to play. Your Google profile name will be your in-game name.';
   $('callsign').classList.toggle('hidden', authRequired);
@@ -41,10 +44,11 @@ async function acceptGoogleCredential(credential) {
 async function initializeAuth() {
   try {
     const response = await fetch('/api/auth/session', { cache: 'no-store' }); const result = await response.json();
-    authRequired = result.required === true; account = result.user || null; renderAccount();
+    authRequired = result.required === true; account = result.user || null; loginOriginUnsupported = authRequired && !isSupportedLoginOrigin(); renderAccount();
+    if (loginOriginUnsupported) { const link = document.createElement('a'); link.href = CANONICAL_GAME_ORIGIN + location.search; link.textContent = 'Open the secure BLACKGRID link'; link.rel = 'noopener'; $('auth-status').replaceChildren(document.createTextNode('Google sign-in is only enabled on the secure game address. '), link); return; }
     if (!account && authRequired) {
       const script = document.createElement('script'); script.src = 'https://accounts.google.com/gsi/client'; script.async = true; script.defer = true;
-      script.onload = () => { window.google?.accounts.id.initialize({ client_id: GOOGLE_CLIENT_ID, callback: ({ credential }) => acceptGoogleCredential(credential), auto_select: true, itp_support: true }); window.google?.accounts.id.renderButton($('google-signin'), { theme: 'outline', size: 'large', shape: 'rectangular', text: 'signin_with', width: 280 }); };
+      script.onload = () => { const config = { client_id: GOOGLE_CLIENT_ID, auto_select: false, itp_support: true }; if (isIOSBrowser && location.origin === CANONICAL_GAME_ORIGIN) { config.ux_mode = 'redirect'; config.login_uri = CANONICAL_GAME_ORIGIN + '/api/auth/google'; } else config.callback = ({ credential }) => acceptGoogleCredential(credential); window.google?.accounts.id.initialize(config); window.google?.accounts.id.renderButton($('google-signin'), { theme: 'outline', size: 'large', shape: 'rectangular', text: 'signin_with', width: 280 }); };
       script.onerror = () => { $('auth-status').textContent = 'Google sign-in did not load. Check your connection and reload.'; }; document.head.append(script);
     }
   } catch { $('auth-status').textContent = 'Unable to check sign-in. Reload to retry.'; }

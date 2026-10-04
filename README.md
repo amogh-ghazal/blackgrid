@@ -38,7 +38,7 @@ When your survivor becomes infected, the mobile attack control changes from **FI
 
 Graphics presets are selected by the player and are never changed automatically. If frame rate stays low, BLACKGRID displays a notice recommending a desktop or a lower preset in Settings. The game is rendered on the player's own device; the hosting server runs the multiplayer simulation. Low server CPU can affect response smoothness and connection latency, while local device/browser/GPU limits affect rendered FPS.
 
-The Render Free web-service tier is intended for trials and hobby projects. Render currently lists its free web service at 0.1 CPU and 512 MB RAM, sleeps after 15 minutes without inbound traffic, and can take about a minute to wake. This deployment is configured for one simultaneous operation (up to 15 players) as a conservative playtest. It is not load-tested or suitable as a promise of capacity for large public events. See [Render's free service limits](https://render.com/docs/free) and [compute plans](https://render.com/docs/compute-plans).
+Render says Free web services are for trials and hobby projects, can spin down after 15 minutes without inbound traffic, take about a minute to wake, and cannot scale beyond one instance. This deployment allows up to five simultaneous operations (15 players each) as a best-effort playtest setting; five heavily occupied rooms are not a tested capacity guarantee. Player graphics render on each player device, so high graphics does not require extra server graphics resources. See [Render's free service limits](https://render.com/docs/free) and [compute plans](https://render.com/docs/compute-plans).
 
 ## Run locally
 
@@ -64,7 +64,7 @@ The Node server serves the built client and WebSocket endpoint on `/socket`. It 
 | --- | --- | --- |
 | `HOST` | `127.0.0.1` | Bind address. Render uses `0.0.0.0`. |
 | `PORT` | `3000` | HTTP and WebSocket port. |
-| `MAX_ROOMS` | `8` | Maximum simultaneous operation rooms on one server process. Each operation permits at most 15 human players. This is a software ceiling, not a capacity guarantee. |
+| `MAX_ROOMS` | `5` | Maximum simultaneous operation rooms on one server process. Each operation permits at most 15 human players. This is a software ceiling, not a capacity guarantee. |
 | `PERSIST_LEARNING` | disabled unless `1` | Read/write bounded aggregate AI-adaptation counters. Render's ephemeral filesystem loses local writes on restarts and sleep. |
 | `DATA_DIR` | `./data` | Directory for optional adaptation data when persistence is enabled. |
 | `ALLOWED_ORIGINS` | empty | Comma-separated explicit origins only when a trusted reverse proxy changes the Host header. |
