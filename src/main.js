@@ -20,8 +20,14 @@ const invite = new URLSearchParams(location.search).get('room');
 if (invite) $('room-code').value = invite.replace(/[^a-zA-Z0-9]/g, '').slice(0, 6).toUpperCase();
 
 function saveSettings() { try { localStorage.setItem('blackgrid-settings', JSON.stringify(settings)); } catch {} }
-function clearInput() { keys.clear(); firing = false; firePointer = null; fireTouch = null; touchMove.x = 0; touchMove.y = 0; touchSprint = false; if (typeof movePointer !== 'undefined' && movePointer !== null) { if (moveStick.hasPointerCapture(movePointer)) moveStick.releasePointerCapture(movePointer); movePointer = null; moveKnob.style.transform = 'translate(0, 0)'; } if (typeof lookPointer !== 'undefined' && lookPointer !== null) { if (lookPad.hasPointerCapture(lookPointer)) lookPad.releasePointerCapture(lookPointer); lookPointer = null; } if (socket?.readyState === WebSocket.OPEN && selfId) socket.send(JSON.stringify({ type: 'input', x: 0, z: 0, yaw: state?.players.find(p => p.id === selfId)?.yaw || 0, fire: false })); }
 function send(data) { if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify(data)); }
+function movementInput() {
+  const yaw = game.aim(mouse.x, mouse.y);
+  const forward = Number(keys.has('KeyW')) - Number(keys.has('KeyS')) - touchMove.y;
+  const strafe = Number(keys.has('KeyD')) - Number(keys.has('KeyA')) + touchMove.x;
+  return { type: 'input', x: forward * Math.sin(yaw) + strafe * Math.cos(yaw), z: forward * Math.cos(yaw) - strafe * Math.sin(yaw), yaw, sprint: touchSprint || keys.has('ShiftLeft') || keys.has('ShiftRight'), fire: firing };
+}
+function clearInput() { keys.clear(); firing = false; firePointer = null; fireTouch = null; touchMove.x = 0; touchMove.y = 0; touchSprint = false; if (typeof movePointer !== 'undefined' && movePointer !== null) { if (moveStick.hasPointerCapture(movePointer)) moveStick.releasePointerCapture(movePointer); movePointer = null; moveKnob.style.transform = 'translate(0, 0)'; } if (typeof lookPointer !== 'undefined' && lookPointer !== null) { if (lookPad.hasPointerCapture(lookPointer)) lookPad.releasePointerCapture(lookPointer); lookPointer = null; } if (socket?.readyState === WebSocket.OPEN && selfId) send(movementInput()); }
 function setBusy(value) { joining = value; $('deploy').disabled = value; $('join-form').querySelector('button').disabled = value; $('deploy').textContent = value ? 'ESTABLISHING CONNECTION' : 'START AN OPERATION'; }
 function setPause(value) { paused = value; show('pause', value); if (value) clearInput(); }
 const modalOpen = () => paused || ['settings', 'field-guide', 'results', 'connection-lost', 'afterlight'].some(id => !$(id).classList.contains('hidden'));
@@ -165,9 +171,9 @@ $('orientation-lock').addEventListener('click', requestLandscape);
 window.addEventListener('resize', continuePendingJoin);
 screen.orientation?.addEventListener?.('change', continuePendingJoin);
 matchMedia('(orientation: landscape)').addEventListener?.('change', continuePendingJoin);
-$('ingame-settings').addEventListener('click', () => { show('pause', false); show('settings'); });
+$('ingame-settings').addEventListener('click', () => { clearInput(); show('pause', false); show('settings'); });
 $('field-guide-open').addEventListener('click', () => show('field-guide'));
-$('ingame-guide').addEventListener('click', () => { show('pause', false); show('field-guide'); });
+$('ingame-guide').addEventListener('click', () => { clearInput(); show('pause', false); show('field-guide'); });
 $('guide-close').addEventListener('click', () => { show('field-guide', false); if (selfId) setPause(false); });
 $('settings-close').addEventListener('click', () => {
   settings.quality = $('quality').value; settings.qualityChosen = true; settings.volume = Number($('volume').value); settings.motion = $('motion').checked; saveSettings();
@@ -223,7 +229,10 @@ window.addEventListener('keydown', event => {
   if (actions[event.code]) send({ type: 'action', action: actions[event.code] });
   if (event.code === 'KeyM') show('map-overlay', $('map-overlay').classList.contains('hidden'));
 });
-window.addEventListener('keyup', event => keys.delete(event.code));
+window.addEventListener('keyup', event => {
+  if (!keys.delete(event.code) || !selfId) return;
+  if (['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ShiftLeft', 'ShiftRight'].includes(event.code)) send(movementInput());
+}, true);
 window.addEventListener('mousemove', event => { if (document.body.classList.contains('touch-device')) return; mouse.x = event.clientX; mouse.y = event.clientY; $('crosshair').style.left = `${event.clientX}px`; $('crosshair').style.top = `${event.clientY}px`; });
 $('world').addEventListener('mousedown', event => { if (event.button === 0) fireStart(); });
 $('view-toggle').addEventListener('click', () => {
@@ -233,6 +242,7 @@ window.addEventListener('mouseup', () => firing = false);
 window.addEventListener('pointerup', event => { if (event.pointerId === firePointer) { firing = false; firePointer = null; } }, true);
 window.addEventListener('pointercancel', event => { if (event.pointerId === firePointer) { firing = false; firePointer = null; } }, true);
 window.addEventListener('blur', clearInput);
+window.addEventListener('focus', clearInput);
 window.addEventListener('contextmenu', event => { if (selfId) event.preventDefault(); });
 $('world').addEventListener('wheel', event => { if (selfId && !modalOpen()) { event.preventDefault(); game.zoom = Math.max(0.7, Math.min(1.5, game.zoom + event.deltaY * 0.0005)); } }, { passive: false });
 window.addEventListener('resize', () => {
@@ -294,10 +304,7 @@ for (const button of document.querySelectorAll('[data-touch-action]')) button.ad
 });
 setInterval(() => {
   if (!selfId || !state || modalOpen() || document.hidden || !['active', 'hub'].includes(state.phase)) return;
-  const yaw = game.aim(mouse.x, mouse.y);
-  const forward = Number(keys.has('KeyW')) - Number(keys.has('KeyS')) - touchMove.y;
-  const strafe = Number(keys.has('KeyD')) - Number(keys.has('KeyA')) + touchMove.x;
-  send({ type: 'input', x: forward * Math.sin(yaw) + strafe * Math.cos(yaw), z: forward * Math.cos(yaw) - strafe * Math.sin(yaw), yaw, sprint: touchSprint || keys.has('ShiftLeft') || keys.has('ShiftRight'), fire: firing });
+  send(movementInput());
 }, 50);
 setInterval(refreshRooms, 5000);
 

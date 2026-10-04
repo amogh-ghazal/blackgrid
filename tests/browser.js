@@ -41,6 +41,10 @@ try {
   await page.keyboard.down('KeyW'); await page.waitForTimeout(900); await page.keyboard.up('KeyW');
   const afterMove = await page.evaluate(() => window.__BLACKGRID__.diagnostics);
   assert.ok(afterMove.x > beforeMove.x + 0.5, `W should move toward the cursor on the right: ${beforeMove.x} -> ${afterMove.x}`);
+  await page.waitForTimeout(700);
+  const settledMove = await page.evaluate(() => window.__BLACKGRID__.diagnostics);
+  assert.ok(Math.hypot(settledMove.x - afterMove.x, settledMove.z - afterMove.z) < 0.25,
+    `Player should stop shortly after W is released: ${JSON.stringify({ released: { x: afterMove.x, z: afterMove.z }, settled: { x: settledMove.x, z: settledMove.z } })}`);
   await page.keyboard.press('KeyV');
   await page.waitForFunction(() => window.__BLACKGRID__.diagnostics.view === 'first');
   await page.waitForTimeout(200);
