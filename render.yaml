@@ -16,7 +16,7 @@ services:
       - key: PERSIST_LEARNING
         value: 0
       - key: BLACKGRID_MAINTENANCE
-        value: 1
+        value: 0
       - key: AUTH_REQUIRED
         value: 1
       - key: NODE_VERSION
