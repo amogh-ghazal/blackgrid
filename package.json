@@ -1,0 +1,27 @@
+{
+  "name": "blackgrid",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "BLACKGRID: cooperative blackout survival",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "node server/index.js --dev",
+    "build": "vite build",
+    "start": "node server/index.js",
+    "test": "node --test tests/*.test.js",
+    "test:browser": "node tests/browser.js",
+    "test:systems": "node tests/browser-systems.js",
+    "check": "npm run test && npm run build"
+  },
+  "dependencies": {
+    "three": "0.186.1",
+    "ws": "8.21.3"
+  },
+  "devDependencies": {
+    "playwright-core": "1.63.0",
+    "vite": "8.3.1"
+  }
+}

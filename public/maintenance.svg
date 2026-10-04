@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 480" role="img" aria-labelledby="title desc">
+  <title id="title">BLACKGRID field systems under maintenance</title>
+  <desc id="desc">A short maintenance interstitial with the BLACKGRID logo floating over a dark city grid.</desc>
+  <defs>
+    <radialGradient id="glow"><stop stop-color="#263b35"/><stop offset="1" stop-color="#091115" stop-opacity="0"/></radialGradient>
+    <linearGradient id="amber"><stop stop-color="#f4d994"/><stop offset="1" stop-color="#c69352"/></linearGradient>
+    <filter id="soft"><feGaussianBlur stdDeviation="14"/></filter>
+  </defs>
+  <ellipse cx="380" cy="190" rx="250" ry="150" fill="url(#glow)"/>
+  <g fill="none" stroke="#92a89a" stroke-opacity=".13" stroke-width="1">
+    <path d="M0 358h760M0 396h760M0 434h760M65 310v170M145 310v170M225 310v170M305 310v170M385 310v170M465 310v170M545 310v170M625 310v170M705 310v170"/>
+    <path d="m0 480 380-170 380 170M125 480l255-170 255 170M255 480l125-170 125 170M505 480 380 310 255 480"/>
+  </g>
+  <path d="M270 165 306 132l36 33-36 33z" fill="#dfb86f" opacity=".1" filter="url(#soft)"/>
+  <g transform="translate(0 0)">
+    <animateTransform attributeName="transform" type="translate" values="0 5;0 -5;0 5" dur="2.8s" repeatCount="indefinite"/>
+    <text x="380" y="199" text-anchor="middle" fill="url(#amber)" font-family="Arial,sans-serif" font-size="74" font-weight="700" letter-spacing="-8">BLACKGRID</text>
+    <path d="M282 220h196" stroke="#d5ad6d" stroke-opacity=".58"/>
+    <circle cx="282" cy="220" r="2" fill="#d5ad6d"/><circle cx="478" cy="220" r="2" fill="#d5ad6d"/>
+  </g>
+  <text x="380" y="278" text-anchor="middle" fill="#d8dfd1" font-family="monospace" font-size="13" letter-spacing="3">FIELD SYSTEMS UNDER MAINTENANCE</text>
+  <text x="380" y="305" text-anchor="middle" fill="#94a89c" font-family="monospace" font-size="10" letter-spacing="3">RESTORING THE FREQUENCY</text>
+  <g transform="translate(346 340)" fill="none" stroke="#c4a46c" stroke-opacity=".65">
+    <path d="M0 0h68"/><path d="M0 8h68" stroke-opacity=".22"/>
+    <circle cx="34" cy="4" r="3" fill="#d9bb7c" stroke="none"><animate attributeName="cx" values="4;64;4" dur="1.5s" repeatCount="indefinite"/></circle>
+  </g>
+</svg>

@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#0a1114" />
+  <meta name="description" content="BLACKGRID. A city without power. An infection that remembers. Online cooperative survival for up to 15 players." />
+  <link rel="icon" href="/icon.svg" type="image/svg+xml" />
+  <title>BLACKGRID — Keep the light alive.</title>
+</head>
+<body>
+  <canvas id="world" aria-label="BLACKGRID 3D game world"></canvas>
+  <video id="menu-preview" autoplay muted loop playsinline preload="auto" aria-hidden="true"><source src="/media/gameplay-preview.webm" type="video/webm"></video>
+  <div class="vignette"></div>
+  <div class="grain"></div>
+  <div id="damage-flash"></div>
+  <div id="loading"><div class="brand-mark">B<span>G</span></div><p>ESTABLISHING SIGNAL</p><div class="load-line"></div></div>
+  <aside id="maintenance-splash" role="status" aria-live="polite"><img class="maintenance-art" src="/maintenance.svg" alt="BLACKGRID field systems under maintenance" /></aside>
+
+  <main id="lobby" class="hidden">
+    <header class="topbar"><a class="wordmark" href="/" aria-label="Blackgrid home"><span class="logo-glyph">▥</span> BLACKGRID<span class="version"> / FIELD BUILD 01</span></a><div class="header-right"><span class="live-dot"></span><span id="server-status">CONNECTING</span><span id="online-count" class="online-count" title="Connected human players across this host">0 ONLINE</span><button id="settings-open" class="icon-button" aria-label="Open settings"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 7h16M4 17h16M8 3v8m8 2v8"/></svg></button></div></header>
+    <div class="lobby-content">
+      <section class="hero">
+        <div class="eyebrow"><span class="tiny-line"></span> COOPERATIVE SURVIVAL / 1–15 PLAYERS</div>
+        <h1>THE CITY<br>WENT DARK.<br><span>YOU DIDN’T.</span></h1>
+        <p class="hero-description">Scavenge the forgotten streets. Bring the grid back online.<br>But remember — the things in the dark are learning.</p>
+        <div class="hero-tags"><span><i></i> THREE OPERATIONS</span><span><i></i> ADAPTIVE INFECTED</span><span><i></i> SHARED SURVIVAL</span></div>
+        <div class="coordinates">SECTOR 07 <span> // </span> 09°58′ N 76°17′ E <span> // </span> SIGNAL LOST</div>
+      </section>
+      <section class="deployment-panel" aria-label="Multiplayer deployment">
+        <div class="panel-eyebrow"><span class="live-dot amber"></span> EMERGENCY FREQUENCY <span class="panel-number">07 / 15</span></div>
+        <h2>Not all lights are out.</h2><p class="panel-subtitle">Find your crew. Leave a signal.</p>
+        <label for="callsign">YOUR NAME <span class="amber-text">REQUIRED</span></label><input id="callsign" maxlength="16" minlength="1" placeholder="ENTER YOUR NAME" autocomplete="nickname" required spellcheck="false" />
+        <div class="deployment-row"><div><label for="crew-size">CREW SIZE</label><select id="crew-size"><option value="5">5 · Recon squad</option><option value="10">10 · Strike team</option><option value="15">15 · Full operation</option><option value="1">1 · Lone survivor</option></select></div><div class="bot-note">Empty slots filled<br>by survivor AI.</div></div>
+        <button id="deploy" class="primary-button">START AN OPERATION <span>↗</span></button>
+        <div class="divider"><span>OR JOIN YOUR CREW</span></div>
+        <form id="join-form" class="join-row"><input id="room-code" aria-label="Six character room code" maxlength="6" placeholder="ROOM CODE" spellcheck="false" autocomplete="off" /><button class="secondary-button" type="submit">JOIN →</button></form>
+        <div id="lobby-error" role="alert"></div>
+        <div class="public-operations"><div class="operations-title">LIVE OPERATIONS <button id="refresh-rooms" aria-label="Refresh operations">↻</button></div><div id="room-list"><p class="empty-rooms">Scanning frequencies…</p></div></div>
+        <p class="privacy-note">Cross-play on desktop, phone, and tablet browsers. Choose a name before deploying.<br>Use COMMS during operations for text chat and optional push-to-talk voice. Meet other crews in Afterlight after victory.</p>
+      </section>
+    </div>
+    <footer class="lobby-footer"><span><b class="amber-text">CAUTION</b> LIGHT SAVES LIVES. LIGHT ATTRACTS THEM.</span><button id="field-guide-open">READ THE FIELD GUIDE <span>↗</span></button><button id="hosting-open" class="build-label">VOLUNTEER HOSTING ↗</button></footer>
+  </main>
+
+  <div id="hud" class="hidden">
+    <div class="hud-top"><div class="hud-brand">BLACKGRID <span id="room-label"></span><button id="copy-code" aria-label="Copy invite link">INVITE ↗</button></div><div class="network-status"><span id="hud-online-count">0 ONLINE</span><span class="live-dot"></span><span id="ping">— ms</span><span id="fps">— FPS</span><button id="view-toggle" aria-label="Switch camera view">VIEW: THIRD PERSON · V</button><button id="comms-open" aria-label="Open text and voice chat">COMMS</button><button id="pause-open" aria-label="Open game menu">ESC / MENU</button></div></div>
+    <section class="objective-panel"><div class="eyebrow" id="operation-label">OPERATION 01 / COLD START</div><h2 id="objective-title">Restore the power station</h2><div class="objective-progress"><div id="power-fill"></div></div><p><span id="power-label">0 / 3 POWER CELLS INSTALLED</span><span id="objective-distance">— M</span></p><div id="objective-hint">Find the amber cells. Bring them to the central station.</div></section>
+    <section class="crew-panel"><div class="mini-label">YOUR CREW <span id="crew-count"></span></div><div id="crew-list"></div></section>
+    <div class="adaptation-panel"><span class="mini-label">INFECTED ADAPTATION</span><div id="adaptation-bars"><i></i><i></i><i></i></div><span id="adaptation-label">INSTINCTIVE</span></div>
+    <div id="toast-stack" aria-live="polite"></div>
+    <div id="crosshair"><i></i><i></i><i></i><i></i></div>
+    <div id="interaction" class="hidden"><kbd>E</kbd><span>INTERACT</span></div>
+    <div id="infection-alert" class="hidden"><span>BIOHAZARD / INFECTION DETECTED</span><strong id="infection-count">45</strong><small>TRANSFORMATION IS IRREVERSIBLE</small></div>
+    <div id="infected-banner" class="hidden">YOU ARE INFECTED <span>Hunt the survivors · Left click to bite</span></div>
+    <section class="vitals"><div class="health-heading"><span class="health-cross">+</span><strong id="health-number">100</strong><span id="health-caption">VITAL SIGNS<br>STABLE</span></div><div class="health-track"><div id="health-fill"></div></div><div class="stamina-track"><div id="stamina-fill"></div></div><div class="inventory"><span><kbd>H</kbd> TRAUMA <b id="medkit-number">1</b></span><span class="amber-text">CELLS <b id="battery-number">0 / 2</b></span></div></section>
+    <div class="controls-strip"><span><kbd>W A S D</kbd> MOVE TOWARD CURSOR</span><span><kbd>SHIFT</kbd> SPRINT</span><span><kbd>V</kbd> VIEW</span><span><kbd>F</kbd> LIGHT</span><span><kbd>R</kbd> RELOAD</span><span><kbd>M</kbd> MAP</span></div>
+    <section class="weapon-panel"><div id="weapon-name">P12 SIDEARM</div><div class="ammo-row"><strong id="ammo-number">12</strong><span>/ <b id="reserve-number">60</b></span></div><div id="weapon-status">SEMI-AUTOMATIC / 9MM</div></section>
+    <div class="minimap-panel"><div class="mini-label">SECTOR 07 <span id="match-time">00:00</span></div><canvas id="minimap" width="200" height="200" aria-label="Tactical minimap"></canvas><div class="map-caption"><span class="amber-text">◆ CELL</span><span>+ GRID</span><span class="red-text">● INFECTED</span></div></div>
+    <div id="map-overlay" class="hidden"><div class="map-title">SECTOR 07 / TACTICAL OVERVIEW <span>M TO CLOSE</span></div><canvas id="large-map" width="700" height="700" aria-label="Tactical map"></canvas><p>Amber: power cells · Cyan: crew · Red: infected · Green: extraction</p></div>
+  </div>
+
+  <div id="touch-controls" class="touch-controls" aria-hidden="true" aria-label="Touch game controls">
+    <div id="move-stick" class="touch-stick" role="group" aria-label="Movement joystick"><span>MOVE</span><i id="move-knob"></i></div>
+    <div id="look-pad" class="touch-stick look-stick" role="group" aria-label="Aim joystick"><span>AIM</span><i></i></div>
+    <div id="touch-actions" aria-label="Game actions">
+      <button data-touch-action="interact" aria-label="Interact">E<br><small>USE</small></button>
+      <button data-touch-action="light" aria-label="Toggle flashlight">F<br><small>LIGHT</small></button>
+      <button data-touch-action="reload" aria-label="Reload">R<br><small>LOAD</small></button>
+      <button data-touch-action="heal" aria-label="Use medkit">H<br><small>HEAL</small></button>
+      <button data-touch-action="map" aria-label="Toggle map">M<br><small>MAP</small></button>
+    </div>
+    <button id="touch-sprint" class="touch-sprint" aria-label="Hold to sprint">SPRINT</button>
+    <button id="touch-fire" class="touch-fire" aria-label="Hold to fire">FIRE</button>
+  </div>
+
+  <section id="afterlight" class="modal-backdrop hidden"><article class="modal afterlight-card"><div class="eyebrow">SIGNAL RESTORED / THE CITY RETURNS</div><h2>The lights are coming back.</h2><p>Your crew made it through. Step into Afterlight, a shared gathering place for survivors who completed an operation. Walk, chat, and meet another crew.</p><button id="enter-afterlight" class="primary-button">ENTER AFTERLIGHT →</button><button id="leave-afterlight-prompt" class="text-button">RETURN TO FREQUENCY</button></article></section>
+  <section id="social-panel" class="social-panel hidden" aria-label="Afterlight social lounge">
+    <header><strong id="comms-title">CREW COMMS</strong><span id="social-count">0 HERE</span><button id="comms-close" class="comms-close" aria-label="Close chat panel">×</button></header>
+    <div class="social-actions"><button id="voice-join" class="secondary-button">JOIN VOICE</button><button id="voice-talk" class="secondary-button" disabled>HOLD TO TALK</button><span id="voice-status" role="status">VOICE OFF</span></div>
+    <div id="chat-log" class="chat-log" role="log" aria-live="polite"></div>
+    <form id="chat-form" class="chat-form"><input id="chat-input" maxlength="120" autocomplete="off" placeholder="Say something to the lounge…" aria-label="Message the lounge"/><button class="primary-button" type="submit">SEND</button></form>
+    <div class="social-hint">WASD / MOVE STICK · TEXT CHAT · HOLD TO TALK</div><button id="leave-afterlight" class="text-button">RETURN TO FREQUENCY</button>
+  </section>
+  <div id="voice-audio" class="hidden" aria-hidden="true"></div>
+
+  <div id="pause" class="modal-backdrop hidden"><section class="modal"><div class="eyebrow">OPERATION CONTINUES WHILE MENU IS OPEN</div><h2>Hold the frequency.</h2><button id="resume" class="primary-button">RETURN TO OPERATION →</button><button id="ingame-settings" class="secondary-button wide">GRAPHICS & AUDIO</button><button id="ingame-guide" class="secondary-button wide">FIELD GUIDE</button><button id="leave" class="text-button">LEAVE OPERATION</button></section></div>
+  <div id="settings" class="modal-backdrop hidden"><section class="modal"><div class="eyebrow">FIELD CONFIGURATION</div><h2>Make it your own.</h2><label for="quality">GRAPHICS PRESET</label><select id="quality"><option value="low">Performance · low-power devices</option><option value="medium" selected>Balanced · GTX 1650 target</option><option value="high">Cinematic · bloom & high-resolution shadows</option></select><label for="volume">AUDIO VOLUME <span id="volume-label">45%</span></label><input id="volume" type="range" min="0" max="100" value="45" /><label for="motion"><input id="motion" type="checkbox" /> Reduce rain and camera shake</label><p class="settings-note">Graphics run on your device. Simulation runs on the match host. Lower settings reduce GPU load; performance depends on hardware, browser, and room activity.</p><button id="settings-close" class="primary-button">SAVE & RETURN →</button></section></div>
+  <div id="field-guide" class="modal-backdrop hidden"><section class="modal guide"><div class="eyebrow">SURVIVOR FIELD MANUAL / REV. 01</div><h2>Know what follows you.</h2><div class="guide-grid"><article><span>01 / THE GRID</span><h3>Carry the light.</h3><p>Collect amber power cells with E. Carry up to two. Return to the central station and press E to install them. Once powered, reach the south extraction zone. Finish three operations to escape.</p></article><article><span>02 / THE DARK</span><h3>They cannot see you.</h3><p>In darkness, infected cannot visually acquire you. They can still hear footsteps, engines, and gunfire, follow nearby blood, or remember your last position. F toggles your flashlight.</p></article><article><span>03 / THE BITE</span><h3>No going back.</h3><p>A bite starts a 75-second transformation. Trauma kits heal wounds, not infection. After turning, you control an infected. Hunt with left click.</p></article><article><span>04 / THE MEMORY</span><h3>Habits have a cost.</h3><p>Infected adapt to aggregate gunfire, light use, and time. Observed human traffic influences patrols; later tiers enable flanking and longer pursuit. This is bounded game AI, not a language model.</p></article></div><div class="guide-controls">Desktop: WASD move toward cursor / Mouse aim / V switch view / Left click fire / Shift sprint. Phone/tablet: left stick move / right pad aim / FIRE and SPRINT buttons / E F R H M actions. Also: wheel zoom / Esc menu.</div><button id="guide-close" class="primary-button">UNDERSTOOD. KEEP MOVING. →</button></section></div>
+  <div id="results" class="modal-backdrop hidden"><section class="modal results-card"><div class="eyebrow" id="result-eyebrow">OPERATION COMPLETE</div><h2 id="result-title">The light lives on.</h2><p id="result-description"></p><div class="result-stats"><div><strong id="result-kills">0</strong><span>INFECTED STOPPED</span></div><div><strong id="result-cells">0</strong><span>CELLS DELIVERED</span></div><div><strong id="result-time">00:00</strong><span>TIME IN THE DARK</span></div></div><button id="enter-afterlight-results" class="primary-button hidden">ENTER AFTERLIGHT →</button><button id="restart" class="primary-button">ANOTHER NIGHT →</button><button id="result-leave" class="text-button">RETURN TO FREQUENCY</button></section></div>
+  <div id="connection-lost" class="modal-backdrop hidden"><section class="modal"><div class="eyebrow red-text">CONNECTION INTERRUPTED</div><h2>Signal lost.</h2><p id="connection-message">The match host is no longer reachable. Your client cannot continue the simulation alone.</p><button id="reconnect" class="primary-button">REJOIN OPERATION →</button><button id="disconnect-home" class="text-button">RETURN TO FREQUENCY</button></section></div>
+  <div id="hosting" class="modal-backdrop hidden"><section class="modal guide"><div class="eyebrow">DISTRIBUTED HOSTING / EXPLICIT OPT-IN</div><h2>More hosts. Less central cost.</h2><div class="guide-grid"><article><span>01 / HOW IT WORKS</span><h3>Independent match hosts.</h3><p>Every player renders locally. A volunteer host runs the match server; it allows eight operations by default and can be configured for up to 128. Each operation supports 15 humans. Those are software limits, not a capacity guarantee: 1,000 players need at least 67 full rooms plus a tuned, load-tested host.</p></article><article><span>02 / WHAT IT IS NOT</span><h3>No hidden compute use.</h3><p>Joining a match never makes your device a backend worker. Machines do not pool graphics memory or train a shared neural network. Different hosts have separate room directories and learning saves. Host migration is not automatic. This temporary playtest host is configured for 8 rooms (120 human slots); larger figures require a separate, benchmarked server.</p></article><article><span>03 / RUN A HOST</span><h3>Your server, your choice.</h3><p>With the project and Node.js 24: run npm ci, npm run build, then npm start. The Windows launcher is start-blackgrid.cmd. For access beyond localhost, explicitly set HOST=0.0.0.0. Set MAX_ROOMS up to 128. Stop the process to stop hosting.</p></article><article><span>04 / GO PUBLIC</span><h3>A reachable endpoint.</h3><p>The included Dockerfile packages the server. Public access requires an HTTPS reverse proxy with WebSocket support, or a compatible hosting service. Account setup, firewalls, NAT, bandwidth, uptime, and possible provider charges remain the operator's responsibility.</p></article></div><p class="settings-note">Matches are public and room codes are not passwords. Host operators are trusted with their own matches. Save data contains anonymous adaptation counters, not chat, credentials, or player profiles. Durable learning requires persistent storage. This is an early playable build, not a hardened commercial service.</p><a href="/licenses.txt" target="_blank" rel="noopener" class="license-link">Third-party licenses</a><button id="hosting-close" class="primary-button">BACK TO THE FREQUENCY →</button></section></div>
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>
