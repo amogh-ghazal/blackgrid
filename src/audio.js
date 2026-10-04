@@ -30,6 +30,7 @@ export class AudioEngine {
   }
   noise(duration, volume, cutoff, position) {
     if (!this.ctx || this.ctx.state !== 'running') return;
+    if (!position || !Number.isFinite(position.x) || !Number.isFinite(position.z)) position = null;
     const attenuation = position ? Math.max(0, 1 - Math.hypot(position.x - this.listener.x, position.z - this.listener.z) / 55) : 1;
     if (attenuation < 0.01) return;
     const source = this.ctx.createBufferSource(), filter = this.ctx.createBiquadFilter(), gain = this.ctx.createGain();
@@ -57,9 +58,17 @@ export class AudioEngine {
   }
   event(event) {
     if (event.type === 'shot') { this.noise(event.weapon === 'shotgun' ? 0.23 : 0.13, 0.6, event.weapon === 'pistol' ? 2000 : 1400, event); }
-    if (event.type === 'kill') this.noise(0.15, 0.14, 600, event);
+    if (event.type === 'impact') this.noise(0.035, 0.18, 850, event);
+    if (event.type === 'kill') { this.noise(0.15, 0.14, 600, event); this.tone(72, 0.2, 0.07, 'triangle', -24); }
     if (event.type === 'pickup') { this.tone(640, 0.09, 0.07); setTimeout(() => this.tone(960, 0.14, 0.05), 80); }
+    if (event.type === 'heal') { this.tone(300, 0.35, 0.07, 'sine', 260); setTimeout(() => this.tone(520, 0.3, 0.05, 'sine', 160), 100); }
     if (event.type === 'power' || event.type === 'stage') { this.tone(120, 1.3, 0.09, 'sine', 300); setTimeout(() => this.tone(480, 0.7, 0.06), 250); }
-    if (event.type === 'bite' || event.type === 'turn') this.tone(90, 0.7, 0.14, 'sawtooth', -60);
+    if (event.type === 'bite' || event.type === 'turn') { this.tone(90, 0.7, 0.14, 'sawtooth', -60); this.noise(0.24, 0.1, 320, event); }
+    if (event.type === 'swipe') { this.noise(0.19, 0.2, 500, event); this.tone(155, 0.18, 0.09, 'sawtooth', -100); }
+    if (event.type === 'hit') { this.noise(0.1, 0.16, 300, event); this.tone(58, 0.18, 0.08, 'triangle', -20); }
+    if (event.type === 'engine') { this.tone(46, 0.65, 0.12, 'sawtooth', 40); setTimeout(() => this.tone(68, 0.45, 0.08, 'sawtooth', 25), 180); }
+    if (event.type === 'evolution' || event.type === 'reinforcements') { this.tone(72, 0.9, 0.1, 'sawtooth', -35); setTimeout(() => this.noise(0.5, 0.08, 240), 180); }
+    if (event.type === 'victory') { this.tone(260, 0.9, 0.1, 'sine', 260); setTimeout(() => this.tone(520, 1.2, 0.07, 'sine', 300), 180); }
+    if (event.type === 'defeat') { this.tone(160, 1.1, 0.1, 'triangle', -110); }
   }
 }

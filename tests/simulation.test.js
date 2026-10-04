@@ -104,6 +104,33 @@ test('shots damage infected only and are limited by ammunition and fire cooldown
   assert.equal(p.ammo, 11); assert.equal(zombie.health, 50);
   tick(room, 0.05); assert.equal(p.ammo, 11);
 });
+test('killing an AI infected brings a replacement into the district instead of clearing the wave', () => {
+  const { room, p } = setup();
+  p.x = 0; p.z = 20; p.yaw = 0;
+  const zombie = { id: 'replace-me', x: 0, z: 25, health: 20, yaw: 0, attackAt: 100, variant: 0, wanderAt: 100 };
+  room.zombies = [zombie];
+  action(room, p, 'fire', 0);
+  tick(room, 0.05);
+  assert.equal(room.totalKills, 1);
+  assert.equal(room.zombies.length, 1);
+  assert.notEqual(room.zombies[0].id, 'replace-me');
+  assert.ok(distance(room.zombies[0], STATION) > SAFE_ZONE_RADIUS);
+  assert.ok(room.events.some(event => event.type === 'reinforcements'));
+});
+test('a player infected by transformation reanimates after being killed by survivors', () => {
+  const { room, p } = setup(2);
+  p.x = 0; p.z = 20; p.yaw = 0;
+  const infected = addHuman(room, 'infected-human', 'Turned');
+  infected.infected = true; infected.x = 0; infected.z = 25; infected.health = 1;
+  action(room, p, 'fire', 0);
+  assert.equal(infected.dead, true);
+  assert.equal(infected.infected, true);
+  assert.ok(infected.respawnAt > room.time);
+  tick(room, 8.1);
+  assert.equal(infected.dead, false);
+  assert.equal(infected.infected, true);
+  assert.equal(infected.health, 170);
+});
 test('a discrete trigger press survives batched press-release inputs and cannot bypass fire rate', () => {
   const { room, p } = setup();
   p.x = 0; p.z = 20;

@@ -64,6 +64,9 @@ try {
   await mobile.goto(`${url}/?room=${initial.room}`, { waitUntil: 'networkidle' });
   await mobile.locator('#callsign').fill('MOBILE');
   await mobile.locator('#join-form button').click();
+  await mobile.locator('#orientation-gate').waitFor({ state: 'visible' });
+  await mobile.setViewportSize({ width: 844, height: 390 });
+  await mobile.locator('#orientation-gate').waitFor({ state: 'hidden' });
   await mobile.locator('#hud').waitFor({ state: 'visible', timeout: 15000 });
   await mobile.waitForFunction(() => window.__BLACKGRID__.diagnostics.networkCodec === 'gzip');
   await page.locator('#comms-open').click(); await page.locator('#social-panel').waitFor({ state: 'visible' });
@@ -71,10 +74,10 @@ try {
   await second.locator('#comms-open').click();
   await second.getByText('Ops channel check').waitFor({ state: 'visible' });
   await context.grantPermissions(['microphone'], { origin: url });
-  await page.locator('#voice-join').click(); await mobile.locator('#comms-open').click();
-  await mobile.locator('#social-panel').waitFor({ state: 'visible' }); await mobile.locator('#voice-join').click();
+  await page.locator('#mic-toggle').click(); await mobile.locator('#mic-toggle').click();
+  await page.waitForFunction(() => document.getElementById('mic-toggle').getAttribute('aria-pressed') === 'true', undefined, { timeout: 5000 });
+  await mobile.waitForFunction(() => document.getElementById('mic-toggle').getAttribute('aria-pressed') === 'true', undefined, { timeout: 5000 });
   await page.waitForFunction(() => /VOICE CONNECTED/.test(document.getElementById('voice-status').textContent), undefined, { timeout: 15000 });
-  await mobile.locator('#comms-close').click();
   assert.equal(await mobile.locator('#touch-controls').evaluate(el => getComputedStyle(el).display !== 'none'), true);
   const mobileBefore = await mobile.evaluate(() => window.__BLACKGRID__.diagnostics);
   const stick = await mobile.locator('#move-stick').boundingBox();
@@ -88,7 +91,7 @@ try {
   await mobile.mouse.down(); await mobile.mouse.move(aimPad.x + aimPad.width / 2 + 30, aimPad.y + aimPad.height / 2, { steps: 3 });
   await mobile.waitForTimeout(250); await mobile.mouse.up();
   const aimAfter = await mobile.evaluate(() => window.__BLACKGRID__.diagnostics.yaw);
-  assert.ok(Math.abs(Math.atan2(Math.sin(aimAfter - aimBefore), Math.cos(aimAfter - aimBefore))) > 0.04, 'Touch aim pad should turn the player');
+  assert.ok(Math.abs(Math.atan2(Math.sin(aimAfter - aimBefore), Math.cos(aimAfter - aimBefore))) > 0.04, `Touch aim pad should turn the player: ${aimBefore} -> ${aimAfter} (${aimPad.x},${aimPad.y})`);
   await mobile.locator('#touch-fire').tap();
   await mobile.waitForFunction(() => Number(document.getElementById('ammo-number').textContent) < 12);
   await mobile.waitForTimeout(800);

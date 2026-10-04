@@ -45,7 +45,12 @@ export function updateHUD(state, me) {
   text('weapon-name', me.vehicle ? 'UTILITY / INTERCEPTOR' : me.infected ? 'INFECTED / CLOSE QUARTERS' : WEAPONS[me.weapon].name);
   text('ammo-number', me.vehicle ? Math.round((state.cars.find(c => c.id === me.vehicle)?.speed || 0) * 3.6) : me.infected ? '—' : me.ammo);
   text('reserve-number', me.vehicle ? 'KM/H' : me.infected ? 'MELEE' : me.reserve);
-  text('weapon-status', me.dead ? `REANIMATING / ${Math.max(0, Math.ceil(me.respawnAt - state.time))}S` : me.vehicle ? 'WASD DRIVE / E EXIT / ENGINE AUDIBLE' : me.infected ? 'LEFT CLICK TO BITE / HUNT SURVIVORS' : me.reloadAt ? 'RELOADING…' : me.light ? 'FLASHLIGHT ON / YOU ARE VISIBLE' : 'LIGHT OFF / STAY QUIET');
+  text('weapon-status', me.dead ? `REANIMATING / ${Math.max(0, Math.ceil(me.respawnAt - state.time))}S` : me.vehicle ? 'WASD DRIVE / E EXIT / ENGINE AUDIBLE' : me.infected ? 'BITE TO ATTACK / HUNT SURVIVORS' : me.reloadAt ? 'RELOADING…' : me.light ? 'FLASHLIGHT ON / YOU ARE VISIBLE' : 'LIGHT OFF / STAY QUIET');
+  const bite = me.infected;
+  text('touch-fire', bite ? 'BITE' : 'FIRE');
+  $('touch-fire').setAttribute('aria-label', bite ? 'Hold to bite nearby survivors' : 'Hold to fire');
+  $('touch-fire').classList.toggle('is-bite', bite);
+  $('mic-toggle').disabled = !['active', 'hub'].includes(state.phase);
   text('adaptation-label', ['INSTINCTIVE', 'PATTERN SEEKING', 'COORDINATED', 'RELENTLESS'][state.adaptation]);
   [...$('adaptation-bars').children].forEach((el, index) => el.classList.toggle('active', index < state.adaptation));
   show('infection-alert', me.infection > 0 && !me.infected); text('infection-count', Math.ceil(me.infection));

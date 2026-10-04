@@ -14,7 +14,7 @@ export function createPlayer(id, name, bot = false) {
   return { id, name, bot, x: (Math.random() - 0.5) * 7, z: 16 + Math.random() * 5, yaw: Math.PI, health: 100, stamina: 100, weapon: 'pistol', ammo: 12, reserve: 60, batteries: 0, medkits: 1, light: false, infected: false, infection: 0, dead: false, kills: 0, delivered: 0, vehicle: null, input: cleanInput(), lastInput: 0, fireAt: 0, reloadAt: 0, protection: 5, attackAt: 0, respawnAt: 0, moved: false };
 }
 export function createRoom(code, title, targetSize = 5, memory = {}, social = false) {
-  const room = { code, title, targetSize: clamp(targetSize, 1, MAX_PLAYERS), owner: null, stage: 0, phase: social ? 'hub' : 'active', social, power: 0, required: REQUIRED[0], time: 0, elapsed: 0, players: new Map(), zombies: [], cars: WORLD.cars.map(c => ({ ...c, driver: null, speed: 0, headlights: false })), supplies: social ? [] : WORLD.supplies.map(s => ({ ...s })), events: [], noises: [], blood: [], heat: new Float32Array(36), learning: { shots: clamp(Number(memory.shots) || 0, 0, 10000), lights: clamp(Number(memory.lights) || 0, 0, 10000), escapes: clamp(Number(memory.escapes) || 0, 0, 10000) }, adaptation: 0, totalKills: 0, waveAt: 110, eventId: 0, rng: randomSeed(721), created: Date.now(), lastActive: Date.now(), stageSince: 0 };
+  const room = { code, title, targetSize: clamp(targetSize, 1, MAX_PLAYERS), owner: null, stage: 0, phase: social ? 'hub' : 'active', social, power: 0, required: REQUIRED[0], time: 0, elapsed: 0, players: new Map(), zombies: [], pendingReinforcements: 0, cars: WORLD.cars.map(c => ({ ...c, driver: null, speed: 0, headlights: false })), supplies: social ? [] : WORLD.supplies.map(s => ({ ...s })), events: [], noises: [], blood: [], heat: new Float32Array(36), learning: { shots: clamp(Number(memory.shots) || 0, 0, 10000), lights: clamp(Number(memory.lights) || 0, 0, 10000), escapes: clamp(Number(memory.escapes) || 0, 0, 10000) }, adaptation: 0, totalKills: 0, waveAt: 110, eventId: 0, rng: randomSeed(721), created: Date.now(), lastActive: Date.now(), stageSince: 0 };
   if (!social) spawnWave(room, 12);
   return room;
 }
@@ -183,6 +183,7 @@ function shoot(room, p) {
       if (nearest.health <= 0) {
         p.kills++; room.totalKills++;
         if ('infected' in nearest) { nearest.health = 0; nearest.dead = true; nearest.respawnAt = room.time + 8; }
+        else room.pendingReinforcements++;
         emit(room, 'kill', { x: nearest.x, z: nearest.z, player: p.id });
       }
     }
@@ -315,7 +316,7 @@ export function tick(room, dt) {
           moveBody(car, Math.sin(car.yaw) * car.speed * dt, Math.cos(car.yaw) * car.speed * dt, 1.4);
           if (distance(before, car) < car.speed * dt * 0.3) car.speed *= 0.6;
           p.x = car.x; p.z = car.z; p.yaw = car.yaw; p.moved = car.speed > 1;
-          if (car.speed > 5) for (const z of room.zombies) if (z.health > 0 && distance(car, z) < 2.5) { z.health = 0; p.kills++; room.totalKills++; emit(room, 'kill', { x: z.x, z: z.z, player: p.id }); }
+          if (car.speed > 5) for (const z of room.zombies) if (z.health > 0 && distance(car, z) < 2.5) { z.health = 0; p.kills++; room.totalKills++; room.pendingReinforcements++; emit(room, 'kill', { x: z.x, z: z.z, player: p.id }); }
         }
       } else if (length > 0.01) {
         const sprint = p.input.sprint && p.stamina > 3 && !p.infected;
@@ -334,6 +335,11 @@ export function tick(room, dt) {
   }
   for (const z of room.zombies) if (z.health > 0) zombieThink(room, z, dt);
   room.zombies = room.zombies.filter(z => z.health > 0);
+  if (room.pendingReinforcements > 0) {
+    const count = room.pendingReinforcements; room.pendingReinforcements = 0;
+    spawnWave(room, count);
+    emit(room, 'reinforcements', { text: 'The noise drew more infected into the district.' });
+  }
   if (room.time > room.waveAt) { spawnWave(room, 4 + room.stage); room.waveAt = room.time + 110; }
   if (room.players.size && ![...room.players.values()].some(p => !p.infected && !p.dead)) { room.phase = 'lost'; emit(room, 'defeat', { text: 'THE SIGNAL WENT DARK. No survivors remain.' }); }
 }

@@ -8,6 +8,7 @@ const audio = new AudioEngine();
 let game, socket = null, state = null, selfId = null, joining = false, intentionalClose = false, lastCode = '', lastEvent = 0, latency = 0, voice = null;
 let mouse = { x: innerWidth / 2, y: innerHeight / 2 }, firing = false, firePointer = null, fireTouch = null, keys = new Set(), touchMove = { x: 0, y: 0 }, touchSprint = false, paused = false, pingTimer, frameCount = 0, frameTime = 0, lastFrame = performance.now(), lastRender = performance.now(), renderAccumulator = 0;
 let settings = { quality: 'medium', volume: 45, motion: false, name: '', qualityChosen: false };
+let pendingJoinCode = null, lowFpsNotified = false, micPending = false;
 try { const saved = JSON.parse(localStorage.getItem('blackgrid-settings') || '{}'); settings = { ...settings, ...saved }; if (saved.qualityChosen !== true) settings.quality = 'medium'; } catch {}
 if (!['low', 'medium', 'high'].includes(settings.quality)) settings.quality = 'medium';
 if (!settings.name || settings.name.toUpperCase() === 'SURVIVOR') settings.name = '';
@@ -32,6 +33,22 @@ function fireStart() {
   if (!selfId || modalOpen()) return;
   firing = true; send({ type: 'action', action: 'fire', yaw: game.aim(mouse.x, mouse.y) }); audio.start().catch(() => {});
 }
+function microphoneState(enabled) {
+  const button = $('mic-toggle');
+  button.classList.toggle('is-live', enabled);
+  button.setAttribute('aria-pressed', String(enabled));
+  button.setAttribute('aria-label', enabled ? 'Mute microphone; currently audible to human players in this operation' : 'Enable microphone; audible to human players in this operation');
+  button.title = enabled ? 'Microphone live · click to mute' : 'Voice chat muted · click to speak';
+}
+function isPortraitTouch() { return document.body.classList.contains('touch-device') && innerHeight > innerWidth; }
+function continuePendingJoin() {
+  if (isPortraitTouch() || pendingJoinCode === null) return;
+  const code = pendingJoinCode; pendingJoinCode = null; show('orientation-gate', false); join(code);
+}
+function requestLandscape() {
+  if (screen.orientation?.lock) screen.orientation.lock('landscape').then(continuePendingJoin).catch(() => {});
+  if (!isPortraitTouch()) continuePendingJoin();
+}
 
 async function refreshRooms() {
   try {
@@ -55,6 +72,7 @@ function appendChat(name, text) {
 function enterAfterlight() { show('afterlight', false); show('social-panel', true); $('chat-input').focus(); }
 function join(code = '') {
   if (joining) return;
+  if (isPortraitTouch()) { pendingJoinCode = code; show('orientation-gate'); $('orientation-lock').focus(); requestLandscape(); return; }
   const name = $('callsign').value.trim().slice(0, 16);
   if (!name) { $('lobby-error').textContent = 'Enter your name before joining or starting an operation.'; $('callsign').focus(); return; }
   audio.start().catch(() => {});
@@ -67,7 +85,7 @@ function join(code = '') {
   socket = ws;
   ws.binaryType = 'arraybuffer';
   let welcomed = false;
-  const timeout = setTimeout(() => { if (!welcomed) { $('lobby-error').textContent = 'Connection timed out. The host may be starting up.'; setBusy(false); ws.close(); } }, 10000);
+  const timeout = setTimeout(() => { if (!welcomed) { $('lobby-error').textContent = 'Connection timed out. The host may be starting up.'; show('mission-loading', false); setBusy(false); ws.close(); } }, 10000);
   ws.onopen = () => ws.send(JSON.stringify({ type: 'join', name: settings.name, code: String(code).toUpperCase(), crew: Number($('crew-size').value), binaryState: typeof DecompressionStream === 'function', title: `${settings.name}'s operation` }));
   const receive = async event => {
     if (ws !== socket || intentionalClose) return;
@@ -78,15 +96,15 @@ function join(code = '') {
       message = JSON.parse(data);
       if (binary) ws.binaryState = true;
     } catch { ws.close(1003, 'Invalid state'); return; }
-      if (message.type === 'error') { clearTimeout(timeout); $('lobby-error').textContent = message.message; if (!$('connection-lost').classList.contains('hidden')) $('connection-message').textContent = message.message; setBusy(false); if (!welcomed) ws.close(); return; }
+      if (message.type === 'error') { clearTimeout(timeout); show('mission-loading', false); $('lobby-error').textContent = message.message; if (!$('connection-lost').classList.contains('hidden')) $('connection-message').textContent = message.message; setBusy(false); if (!welcomed) ws.close(); return; }
     if (message.type === 'chat') { appendChat(message.name, message.text); return; }
     if (message.type === 'signal') { voice?.signal(message.from, message.signal).catch(() => {}); return; }
     if (message.type === 'voice-ready') { voice?.ready(message.from, state?.players.find(player => player.id === message.from)?.name).catch(() => {}); return; }
     if (message.type === 'voice-left') { voice?.removePeer(message.from); if (voice?.active) $('voice-status').textContent = `VOICE CONNECTED · ${voice.peers.size} PEER${voice.peers.size === 1 ? '' : 'S'}`; return; }
     if (message.type === 'welcome') {
-      welcomed = true; clearTimeout(timeout); setBusy(false); selfId = message.id; lastCode = message.code; state = message.state; lastEvent = Math.max(0, ...state.events.map(e => e.id));
+      welcomed = true; clearTimeout(timeout); setBusy(false); show('mission-loading', false); selfId = message.id; lastCode = message.code; state = message.state; lastEvent = Math.max(0, ...state.events.map(e => e.id));
       for (const id of ['lobby', 'connection-lost', 'results', 'pause', 'settings', 'field-guide']) show(id, false);
-      show('hud'); paused = false; document.body.classList.add('playing'); game.applyState(state, selfId);
+      show('hud'); paused = false; document.body.classList.add('playing'); game.applyState(state, selfId); microphoneState(false);
       updateHUD(state, state.players.find(p => p.id === selfId));
       const inHub = state.phase === 'hub'; document.body.classList.toggle('social-mode', inHub); show('social-panel', false); show('afterlight', inHub); voice?.close(); voice = ['active', 'hub'].includes(state.phase) ? new VoiceRoom({ selfId, send, onStatus: text => { $('voice-status').textContent = text; } }) : null;
       $('comms-title').textContent = inHub ? 'AFTERLIGHT / SOCIAL LOUNGE' : 'CREW COMMS';
@@ -99,6 +117,7 @@ function join(code = '') {
     if (message.type === 'pong') { latency = Math.round(performance.now() - message.at); $('ping').textContent = `${latency} ms`; return; }
     if (message.type === 'state' && selfId) {
       state = message.state; game.applyState(state, selfId);
+      if (!['active', 'hub'].includes(state.phase) && voice?.active) { send({ type: 'voice-left' }); voice.close(); microphoneState(false); $('voice-status').textContent = 'VOICE OFF'; }
       if (state.phase === 'hub') $('social-count').textContent = `${state.players.filter(player => !player.bot).length} HERE`;
       voice?.sync(state.players);
       const me = state.players.find(p => p.id === selfId);
@@ -106,6 +125,7 @@ function join(code = '') {
       for (const event of state.events) {
         if (event.id <= lastEvent) continue;
         lastEvent = event.id; game.effect(event);
+        if (event.type === 'stage') { $('mission-loading-title').textContent = `OPERATION ${String(state.stage + 1).padStart(2, '0')} / DEPLOYING`; show('mission-loading'); setTimeout(() => show('mission-loading', false), 1450); }
         if (!['pickup', 'bite', 'turn'].includes(event.type) || event.player === selfId) audio.event(event);
         if (event.text && !['join', 'heal'].includes(event.type)) toast(event.text, ['bite', 'turn', 'defeat'].includes(event.type));
         if (event.type === 'pickup' && event.player === selfId) toast(`${event.item === 'battery' ? 'POWER CELL SECURED. Return it to the station.' : event.item.toUpperCase() + ' COLLECTED.'}`);
@@ -122,12 +142,14 @@ function join(code = '') {
     if (ws !== socket || intentionalClose) return;
     if (welcomed) { show('connection-lost'); $('connection-message').textContent = event.code === 1013 ? 'The connection could not keep up with the match. Try reconnecting on a faster network.' : 'The match host is no longer reachable. Rejoin if the host is still running; a new slot may replace an AI survivor.'; }
     else if (!$('lobby-error').textContent) $('lobby-error').textContent = 'Unable to join the host. Check the connection and try again.';
+    show('mission-loading', false);
   };
-  ws.onerror = () => { $('lobby-error').textContent = 'The match connection failed. Check that the server is running.'; };
+  ws.onerror = () => { show('mission-loading', false); $('lobby-error').textContent = 'The match connection failed. Check that the server is running.'; };
+  $('mission-loading-title').textContent = 'DEPLOYING INTO THE DARK'; show('mission-loading');
 }
 function leave() {
   intentionalClose = true; clearInput(); if (voice?.active) send({ type: 'voice-left' }); voice?.close(); voice = null; socket?.close(); socket = null; clearInterval(pingTimer);
-  selfId = null; state = null; lastEvent = 0; paused = false; game.reset(); updateViewToggle(); document.body.classList.remove('playing', 'social-mode');
+  selfId = null; state = null; lastEvent = 0; paused = false; game.reset(); updateViewToggle(); microphoneState(false); show('mission-loading', false); document.body.classList.remove('playing', 'social-mode');
   for (const id of ['hud', 'pause', 'results', 'connection-lost', 'settings', 'field-guide', 'map-overlay', 'afterlight', 'social-panel']) show(id, false);
   show('lobby'); history.replaceState({}, '', location.pathname); refreshRooms();
 }
@@ -138,6 +160,10 @@ $('refresh-rooms').addEventListener('click', refreshRooms);
 $('settings-open').addEventListener('click', () => show('settings'));
 $('hosting-open').addEventListener('click', () => show('hosting'));
 $('hosting-close').addEventListener('click', () => show('hosting', false));
+$('orientation-lock').addEventListener('click', requestLandscape);
+window.addEventListener('resize', continuePendingJoin);
+screen.orientation?.addEventListener?.('change', continuePendingJoin);
+matchMedia('(orientation: landscape)').addEventListener?.('change', continuePendingJoin);
 $('ingame-settings').addEventListener('click', () => { show('pause', false); show('settings'); });
 $('field-guide-open').addEventListener('click', () => show('field-guide'));
 $('ingame-guide').addEventListener('click', () => { show('pause', false); show('field-guide'); });
@@ -162,17 +188,22 @@ $('chat-form').addEventListener('submit', event => {
   if (!text || !['active', 'hub'].includes(state?.phase)) return;
   send({ type: 'chat', text }); $('chat-input').value = '';
 });
-$('voice-join').addEventListener('click', async () => {
-  if (!voice || !['active', 'hub'].includes(state?.phase)) return;
-  if (voice.active) { send({ type: 'voice-left' }); voice.close(); $('voice-talk').disabled = true; $('voice-join').textContent = 'JOIN VOICE'; $('voice-status').textContent = 'VOICE OFF'; return; }
-  try { await voice.enable(state.players); $('voice-join').textContent = 'LEAVE VOICE'; $('voice-talk').disabled = false; }
-  catch (error) { $('voice-status').textContent = error.name === 'NotAllowedError' ? 'MICROPHONE PERMISSION DENIED' : error.message || 'VOICE UNAVAILABLE'; }
+$('mic-toggle').addEventListener('click', async () => {
+  if (micPending || !['active', 'hub'].includes(state?.phase)) return;
+  micPending = true; $('mic-toggle').disabled = true;
+  try {
+    if (!voice) voice = new VoiceRoom({ selfId, send, onStatus: text => { $('voice-status').textContent = text; } });
+    if (!voice.active) $('voice-status').textContent = 'REQUESTING MICROPHONE PERMISSION…';
+    if (!voice.active) await voice.enable(state.players);
+    const enabled = !voice.stream?.getAudioTracks().some(track => track.enabled);
+    voice.setTalking(enabled); microphoneState(enabled);
+    $('voice-status').textContent = enabled ? 'MIC LIVE · HEARD BY HUMAN PLAYERS IN THIS ROOM' : 'MICROPHONE MUTED';
+  } catch (error) {
+    microphoneState(false);
+    $('voice-status').textContent = error.name === 'NotAllowedError' ? 'MICROPHONE PERMISSION DENIED' : error.message || 'VOICE UNAVAILABLE';
+    toast($('voice-status').textContent, true);
+  } finally { micPending = false; $('mic-toggle').disabled = !['active', 'hub'].includes(state?.phase); }
 });
-const setVoiceTalking = enabled => voice?.setTalking(Boolean(enabled && voice.active));
-$('voice-talk').addEventListener('pointerdown', event => { event.preventDefault(); $('voice-talk').setPointerCapture(event.pointerId); setVoiceTalking(true); $('voice-status').textContent = 'TRANSMITTING · RELEASE TO MUTE'; });
-for (const eventName of ['pointerup', 'pointercancel', 'lostpointercapture']) $('voice-talk').addEventListener(eventName, () => { setVoiceTalking(false); if (voice?.active) $('voice-status').textContent = 'MIC READY · HOLD TO TALK'; });
-$('voice-talk').addEventListener('keydown', event => { if (event.code === 'Space' || event.code === 'Enter') { event.preventDefault(); setVoiceTalking(true); } });
-$('voice-talk').addEventListener('keyup', event => { if (event.code === 'Space' || event.code === 'Enter') setVoiceTalking(false); });
 $('copy-code').addEventListener('click', async () => {
   try { await navigator.clipboard.writeText(location.href); toast('INVITE LINK COPIED. Anyone with host access can join.'); }
   catch { toast(`ROOM CODE: ${lastCode} — share this page address with your crew.`); }
@@ -203,7 +234,13 @@ window.addEventListener('pointercancel', event => { if (event.pointerId === fire
 window.addEventListener('blur', clearInput);
 window.addEventListener('contextmenu', event => { if (selfId) event.preventDefault(); });
 $('world').addEventListener('wheel', event => { if (selfId && !modalOpen()) { event.preventDefault(); game.zoom = Math.max(0.7, Math.min(1.5, game.zoom + event.deltaY * 0.0005)); } }, { passive: false });
-window.addEventListener('resize', () => game?.resize());
+window.addEventListener('resize', () => {
+  game?.resize();
+  if (document.body.classList.contains('touch-device')) {
+    mouse.x = innerWidth / 2; mouse.y = innerHeight / 2;
+    $('crosshair').style.left = `${mouse.x}px`; $('crosshair').style.top = `${mouse.y}px`;
+  }
+});
 document.addEventListener('visibilitychange', () => { if (document.hidden) { clearInput(); audio.ctx?.suspend(); } else if (selfId) audio.start().catch(() => {}); });
 
 if (navigator.maxTouchPoints > 0 || matchMedia('(pointer: coarse)').matches) {
@@ -270,7 +307,7 @@ function render(now) {
   if (document.hidden || renderAccumulator < (selfId ? 1 / 62 : 1 / 32)) return;
   const step = Math.min(renderAccumulator, 0.1); renderAccumulator = 0;
   game.update(step); frameCount++; frameTime += (now - lastRender) / 1000; lastRender = now;
-  if (frameTime >= 1) { const measured = frameCount / frameTime; $('fps').textContent = `${Math.round(measured)} FPS`; frameCount = 0; frameTime = 0; perfWindow += measured; perfFrames++; if (perfFrames >= 3) { const average = perfWindow / perfFrames; perfWindow = 0; perfFrames = 0; lowFpsWindows = average < 43 ? lowFpsWindows + 1 : 0; if (lowFpsWindows >= 2 && game.quality !== 'low') { game.setQuality(game.quality === 'high' ? 'medium' : 'low'); $('quality').value = game.quality; lowFpsWindows = 0; toast('Performance preset lowered to stabilize frame rate. Change it any time in settings.'); } } }
+  if (frameTime >= 1) { const measured = frameCount / frameTime; $('fps').textContent = `${Math.round(measured)} FPS`; frameCount = 0; frameTime = 0; perfWindow += measured; perfFrames++; if (perfFrames >= 3) { const average = perfWindow / perfFrames; perfWindow = 0; perfFrames = 0; lowFpsWindows = average < 43 ? lowFpsWindows + 1 : 0; if (lowFpsWindows >= 2 && !lowFpsNotified) { lowFpsNotified = true; toast('LOW FRAME RATE: For smoother play, try a desktop, or lower the graphics preset in Settings.', true); } } }
 }
 try {
   game = new GameScene($('world')); game.setQuality(settings.quality); game.reducedMotion = settings.motion;
