@@ -74,12 +74,18 @@ try {
   mobile.on('pageerror', error => errors.push(error.message));
   mobile.on('console', message => { if (message.type() === 'error') errors.push(message.text()); });
   await mobile.goto(`${url}/?room=${initial.room}`, { waitUntil: 'networkidle' });
+  const mobileViewport = await mobile.locator('meta[name="viewport"]').getAttribute('content');
+  assert.match(mobileViewport, /user-scalable=no/, 'Phone browser zoom should be disabled');
   await mobile.locator('#callsign').fill('MOBILE');
   await mobile.locator('#join-form button').click();
   await mobile.locator('#orientation-gate').waitFor({ state: 'visible' });
   await mobile.setViewportSize({ width: 844, height: 390 });
   await mobile.locator('#orientation-gate').waitFor({ state: 'hidden' });
   await mobile.locator('#hud').waitFor({ state: 'visible', timeout: 15000 });
+  assert.equal((await mobile.evaluate(() => window.__BLACKGRID__.diagnostics)).quality, 'high', 'Phones should start in high detail');
+  await mobile.locator('#pause-open').tap(); await mobile.locator('#ingame-settings').tap();
+  assert.equal(await mobile.locator('#graphics-setting').evaluate(el => getComputedStyle(el).display), 'none', 'Mobile users should not see desktop graphics presets');
+  await mobile.locator('#settings-close').tap();
   await mobile.waitForFunction(() => window.__BLACKGRID__.diagnostics.networkCodec === 'gzip');
   await page.locator('#comms-open').click(); await page.locator('#social-panel').waitFor({ state: 'visible' });
   await page.locator('#chat-input').fill('Ops channel check'); await page.locator('#chat-form button').click();
