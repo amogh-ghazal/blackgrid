@@ -17,7 +17,7 @@ export function renderRooms(rooms, join) {
   for (const room of active) {
     const button = document.createElement('button'); button.className = 'room-entry';
     const name = document.createElement('b'); name.textContent = room.code;
-    const detail = document.createElement('span'); detail.textContent = `${room.humans}/15 · OP ${room.stage + 1} ↗`;
+    const detail = document.createElement('span'); detail.textContent = `${room.humans}/15  /  OP ${room.stage + 1}`;
     button.append(name, detail); button.addEventListener('click', () => join(room.code)); $('room-list').append(button);
   }
 }
@@ -43,7 +43,7 @@ export function updateHUD(state, me) {
   $('stamina-fill').style.width = `${me.stamina}%`;
   text('medkit-number', me.medkits); text('battery-number', `${me.batteries} / 2`);
   text('weapon-name', me.vehicle ? 'UTILITY / INTERCEPTOR' : me.infected ? 'INFECTED / CLOSE QUARTERS' : WEAPONS[me.weapon].name);
-  text('ammo-number', me.vehicle ? Math.round((state.cars.find(c => c.id === me.vehicle)?.speed || 0) * 3.6) : me.infected ? '—' : me.ammo);
+  text('ammo-number', me.vehicle ? Math.round((state.cars.find(c => c.id === me.vehicle)?.speed || 0) * 3.6) : me.infected ? 'N/A' : me.ammo);
   text('reserve-number', me.vehicle ? 'KM/H' : me.infected ? 'MELEE' : me.reserve);
   text('weapon-status', me.dead ? `REANIMATING / ${Math.max(0, Math.ceil(me.respawnAt - state.time))}S` : me.vehicle ? 'WASD DRIVE / E EXIT / ENGINE AUDIBLE' : me.infected ? 'BITE TO ATTACK / HUNT SURVIVORS' : me.reloadAt ? 'RELOADING…' : me.light ? 'FLASHLIGHT ON / YOU ARE VISIBLE' : 'LIGHT OFF / STAY QUIET');
   const bite = me.infected;
@@ -85,7 +85,7 @@ export function updateHUD(state, me) {
     text('result-description', won ? 'Three districts restored. Your crew brought a city back from the edge.' : 'No uninfected survivors remain. Rethink your routes, stay quiet, and try again.');
     text('result-kills', me.kills); text('result-cells', me.delivered); text('result-time', clock(state.time));
     $('restart').disabled = state.owner !== me.id;
-    $('restart').textContent = state.owner === me.id ? 'ANOTHER NIGHT →' : 'WAITING FOR CREW LEADER';
+    $('restart').textContent = state.owner === me.id ? 'ANOTHER NIGHT' : 'WAITING FOR CREW LEADER';
   }
 }
 export function drawMap(canvas, state, me) {

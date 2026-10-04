@@ -5,6 +5,8 @@
 Live playtest: https://blackgrid-5obd.onrender.com  
 Platform: desktop, phone, and tablet browsers with WebGL 2. Each operation supports up to 15 human players.
 
+Player-facing documents: [Privacy Notice](https://blackgrid-5obd.onrender.com/privacy.html) and [Terms of Use](https://blackgrid-5obd.onrender.com/terms.html). These describe the current playtest and should be revised when accounts, analytics, moderation, or new data processing are introduced.
+
 ## Play
 
 1. Open the live site or your own deployment and enter a callsign. Callsigns are temporary display names, not authenticated accounts.
@@ -79,6 +81,10 @@ The Node server serves the built client and WebSocket endpoint on `/socket`. It 
 - `tests/` contains simulation, networking, and browser/system checks.
 - Client messages communicate player intent. The server decides movement and combat outcomes.
 - Room chat and voice are temporary and scoped to the current operation/social room. Bots never receive browser voice streams.
+
+## Visual direction
+
+The interface uses an incident-record and municipal field-report art direction: warm paper, soot, and signal orange; a Georgia display face paired with plain Arial and compact field labels; thin rules and restrained motion. It avoids imported icon packs, web-font dependencies, glow, and automatic control movement. The game scene remains the primary artwork.
 
 ## Accounts, friends, and out-of-game chat
 

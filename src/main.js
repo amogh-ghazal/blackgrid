@@ -1,4 +1,5 @@
 import './style.css';
+import './theme.css';
 import { GameScene } from './scene.js';
 import { AudioEngine } from './audio.js';
 import { VoiceRoom } from './voice.js';
@@ -21,7 +22,7 @@ if (invite) $('room-code').value = invite.replace(/[^a-zA-Z0-9]/g, '').slice(0, 
 function saveSettings() { try { localStorage.setItem('blackgrid-settings', JSON.stringify(settings)); } catch {} }
 function clearInput() { keys.clear(); firing = false; firePointer = null; fireTouch = null; touchMove.x = 0; touchMove.y = 0; touchSprint = false; if (typeof movePointer !== 'undefined' && movePointer !== null) { if (moveStick.hasPointerCapture(movePointer)) moveStick.releasePointerCapture(movePointer); movePointer = null; moveKnob.style.transform = 'translate(0, 0)'; } if (typeof lookPointer !== 'undefined' && lookPointer !== null) { if (lookPad.hasPointerCapture(lookPointer)) lookPad.releasePointerCapture(lookPointer); lookPointer = null; } if (socket?.readyState === WebSocket.OPEN && selfId) socket.send(JSON.stringify({ type: 'input', x: 0, z: 0, yaw: state?.players.find(p => p.id === selfId)?.yaw || 0, fire: false })); }
 function send(data) { if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify(data)); }
-function setBusy(value) { joining = value; $('deploy').disabled = value; $('join-form').querySelector('button').disabled = value; $('deploy').innerHTML = value ? 'ESTABLISHING CONNECTION…' : 'START AN OPERATION <span>↗</span>'; }
+function setBusy(value) { joining = value; $('deploy').disabled = value; $('join-form').querySelector('button').disabled = value; $('deploy').textContent = value ? 'ESTABLISHING CONNECTION' : 'START AN OPERATION'; }
 function setPause(value) { paused = value; show('pause', value); if (value) clearInput(); }
 const modalOpen = () => paused || ['settings', 'field-guide', 'results', 'connection-lost', 'afterlight'].some(id => !$(id).classList.contains('hidden'));
 function updateViewToggle(mode = game.viewMode) {
@@ -206,7 +207,7 @@ $('mic-toggle').addEventListener('click', async () => {
 });
 $('copy-code').addEventListener('click', async () => {
   try { await navigator.clipboard.writeText(location.href); toast('INVITE LINK COPIED. Anyone with host access can join.'); }
-  catch { toast(`ROOM CODE: ${lastCode} — share this page address with your crew.`); }
+  catch { toast(`ROOM CODE: ${lastCode} | Share this page address with your crew.`); }
 });
 window.addEventListener('keydown', event => {
   if (event.target instanceof HTMLInputElement || event.target instanceof HTMLSelectElement) return;

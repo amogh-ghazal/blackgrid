@@ -16,7 +16,7 @@ export class VoiceRoom {
     this.active = true;
     this.sync(players);
     this.send({ type: 'voice-ready' });
-    this.onStatus('MIC READY · HOLD TO TALK');
+    this.onStatus('MICROPHONE READY · TAP MIC TO SPEAK');
   }
 
   sync(players) {

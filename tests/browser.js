@@ -13,6 +13,14 @@ page.on('console', message => { if (message.type() === 'error') errors.push(mess
 try {
   await page.goto(url, { waitUntil: 'networkidle', timeout: 60000 });
   await page.locator('#lobby').waitFor({ state: 'visible', timeout: 30000 });
+  assert.equal(await page.locator('.legal-nav a[href="/privacy.html"]').count(), 1);
+  assert.equal(await page.locator('.legal-nav a[href="/terms.html"]').count(), 1);
+  const legalPage = await context.newPage();
+  await legalPage.goto(`${url}/privacy.html`, { waitUntil: 'networkidle' });
+  assert.equal(await legalPage.locator('h1').textContent(), 'Privacy notice');
+  await legalPage.goto(`${url}/terms.html`, { waitUntil: 'networkidle' });
+  assert.equal(await legalPage.locator('h1').textContent(), 'Terms of use');
+  await legalPage.close();
   await page.waitForTimeout(1500);
   const preview = await page.locator('#menu-preview').evaluate(video => ({ ready: video.readyState, time: video.currentTime, muted: video.muted }));
   assert.ok(preview.ready >= 2 && preview.time > 0 && preview.muted, `Lobby gameplay preview should autoplay muted: ${JSON.stringify(preview)}`);
@@ -85,7 +93,7 @@ try {
   await mobile.mouse.down(); await mobile.mouse.move(stick.x + stick.width / 2 + 36, stick.y + stick.height / 2, { steps: 3 });
   await mobile.waitForTimeout(800); await mobile.mouse.up();
   const mobileAfter = await mobile.evaluate(() => window.__BLACKGRID__.diagnostics);
-  assert.ok(Math.hypot(mobileAfter.x - mobileBefore.x, mobileAfter.z - mobileBefore.z) > 0.5, 'Touch joystick should move a player in the shared room');
+  assert.ok(Math.hypot(mobileAfter.x - mobileBefore.x, mobileAfter.z - mobileBefore.z) > 0.5, `Touch joystick should move a player in the shared room: ${JSON.stringify({ before: mobileBefore, after: mobileAfter, bounds: stick })}`);
   const aimBefore = mobileAfter.yaw, aimPad = await mobile.locator('#look-pad').boundingBox();
   await mobile.mouse.move(aimPad.x + aimPad.width / 2, aimPad.y + aimPad.height / 2);
   await mobile.mouse.down(); await mobile.mouse.move(aimPad.x + aimPad.width / 2 + 30, aimPad.y + aimPad.height / 2, { steps: 3 });
