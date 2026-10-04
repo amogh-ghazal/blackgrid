@@ -24,10 +24,12 @@ function send(data) { if (socket?.readyState === WebSocket.OPEN) socket.send(JSO
 function movementInput() {
   const yaw = game.aim(mouse.x, mouse.y);
   const forward = Number(keys.has('KeyW')) - Number(keys.has('KeyS')) - touchMove.y;
-  const strafe = Number(keys.has('KeyD')) - Number(keys.has('KeyA')) + touchMove.x;
+  // A / left-stick-left must move to the player's left in the same local basis
+  // used by the actor model. Keep keyboard and touch movement aligned.
+  const strafe = Number(keys.has('KeyA')) - Number(keys.has('KeyD')) - touchMove.x;
   return { type: 'input', x: forward * Math.sin(yaw) + strafe * Math.cos(yaw), z: forward * Math.cos(yaw) - strafe * Math.sin(yaw), yaw, sprint: touchSprint || keys.has('ShiftLeft') || keys.has('ShiftRight'), fire: firing };
 }
-function clearInput() { keys.clear(); firing = false; firePointer = null; fireTouch = null; touchMove.x = 0; touchMove.y = 0; touchSprint = false; if (typeof movePointer !== 'undefined' && movePointer !== null) { if (moveStick.hasPointerCapture(movePointer)) moveStick.releasePointerCapture(movePointer); movePointer = null; moveKnob.style.transform = 'translate(0, 0)'; } if (typeof lookPointer !== 'undefined' && lookPointer !== null) { if (lookPad.hasPointerCapture(lookPointer)) lookPad.releasePointerCapture(lookPointer); lookPointer = null; } if (socket?.readyState === WebSocket.OPEN && selfId) send(movementInput()); }
+function clearInput() { keys.clear(); firing = false; firePointer = null; fireTouch = null; lookTouch = null; moveTouch = null; touchMove.x = 0; touchMove.y = 0; touchSprint = false; if (typeof movePointer !== 'undefined' && movePointer !== null) { if (moveStick.hasPointerCapture(movePointer)) moveStick.releasePointerCapture(movePointer); movePointer = null; moveKnob.style.transform = 'translate(0, 0)'; } if (typeof lookPointer !== 'undefined' && lookPointer !== null) { if (lookPad.hasPointerCapture(lookPointer)) lookPad.releasePointerCapture(lookPointer); lookPointer = null; } if (socket?.readyState === WebSocket.OPEN && selfId) send(movementInput()); }
 function setBusy(value) { joining = value; $('deploy').disabled = value; $('join-form').querySelector('button').disabled = value; $('deploy').textContent = value ? 'ESTABLISHING CONNECTION' : 'START AN OPERATION'; }
 function setPause(value) { paused = value; show('pause', value); if (value) clearInput(); }
 const modalOpen = () => paused || ['settings', 'field-guide', 'results', 'connection-lost', 'afterlight'].some(id => !$(id).classList.contains('hidden'));
@@ -258,7 +260,7 @@ if (navigator.maxTouchPoints > 0 || matchMedia('(pointer: coarse)').matches) {
   document.body.classList.add('touch-device'); $('touch-controls').setAttribute('aria-hidden', 'false');
 }
 const moveStick = $('move-stick'), moveKnob = $('move-knob');
-let movePointer = null;
+let movePointer = null, moveTouch = null;
 function updateMoveStick(event) {
   const bounds = moveStick.getBoundingClientRect(), radius = bounds.width * 0.36;
   const dx = event.clientX - (bounds.left + bounds.width / 2), dy = event.clientY - (bounds.top + bounds.height / 2);
@@ -266,25 +268,77 @@ function updateMoveStick(event) {
   touchMove.x = dx * scale / radius; touchMove.y = dy * scale / radius;
   moveKnob.style.transform = `translate(${touchMove.x * radius}px, ${touchMove.y * radius}px)`;
 }
-moveStick.addEventListener('pointerdown', event => { event.preventDefault(); movePointer = event.pointerId; moveStick.setPointerCapture(movePointer); updateMoveStick(event); });
+moveStick.addEventListener('pointerdown', event => {
+  event.preventDefault(); movePointer = event.pointerId; updateMoveStick(event);
+  try { moveStick.setPointerCapture(movePointer); } catch { movePointer = null; }
+});
 moveStick.addEventListener('pointermove', event => { if (event.pointerId === movePointer) { event.preventDefault(); updateMoveStick(event); } });
 function releaseMoveStick(event) {
   if (event.pointerId !== movePointer) return;
-  if (moveStick.hasPointerCapture(event.pointerId)) moveStick.releasePointerCapture(event.pointerId);
+  try { if (moveStick.hasPointerCapture(event.pointerId)) moveStick.releasePointerCapture(event.pointerId); } catch {}
   movePointer = null; touchMove.x = 0; touchMove.y = 0; moveKnob.style.transform = 'translate(0, 0)';
 }
 moveStick.addEventListener('pointerup', releaseMoveStick); moveStick.addEventListener('pointercancel', releaseMoveStick);
+moveStick.addEventListener('touchstart', event => {
+  if (movePointer !== null || moveTouch !== null) return;
+  event.preventDefault(); const touch = event.changedTouches[0]; if (!touch) return;
+  moveTouch = touch.identifier; updateMoveStick(touch);
+}, { passive: false });
+moveStick.addEventListener('touchmove', event => {
+  if (movePointer !== null || moveTouch === null) return;
+  const touch = [...event.changedTouches].find(item => item.identifier === moveTouch);
+  if (!touch) return;
+  event.preventDefault(); updateMoveStick(touch);
+}, { passive: false });
+function releaseMoveTouch(event) {
+  if (moveTouch === null || ![...event.changedTouches].some(touch => touch.identifier === moveTouch)) return;
+  moveTouch = null; touchMove.x = 0; touchMove.y = 0; moveKnob.style.transform = 'translate(0, 0)';
+}
+moveStick.addEventListener('touchend', releaseMoveTouch, { passive: true });
+moveStick.addEventListener('touchcancel', releaseMoveTouch, { passive: true });
 
 const lookPad = $('look-pad');
-let lookPointer = null, lookLast = { x: 0, y: 0 };
-lookPad.addEventListener('pointerdown', event => { event.preventDefault(); lookPointer = event.pointerId; lookLast = { x: event.clientX, y: event.clientY }; lookPad.setPointerCapture(lookPointer); });
+let lookPointer = null, lookTouch = null, lookLast = { x: 0, y: 0 };
+function moveAim(clientX, clientY) {
+  mouse.x = Math.max(0, Math.min(innerWidth, mouse.x + (clientX - lookLast.x) * 0.8));
+  mouse.y = Math.max(0, Math.min(innerHeight, mouse.y + (clientY - lookLast.y) * 0.45));
+  lookLast = { x: clientX, y: clientY };
+  $('crosshair').style.left = `${mouse.x}px`; $('crosshair').style.top = `${mouse.y}px`;
+}
+lookPad.addEventListener('pointerdown', event => {
+  event.preventDefault(); lookPointer = event.pointerId; lookTouch = null;
+  lookLast = { x: event.clientX, y: event.clientY };
+  try { lookPad.setPointerCapture(lookPointer); } catch { lookPointer = null; }
+});
 lookPad.addEventListener('pointermove', event => {
   if (event.pointerId !== lookPointer) return;
-  event.preventDefault(); mouse.x = Math.max(0, Math.min(innerWidth, mouse.x + (event.clientX - lookLast.x) * 0.8)); mouse.y = Math.max(0, Math.min(innerHeight, mouse.y + (event.clientY - lookLast.y) * 0.45));
-  lookLast = { x: event.clientX, y: event.clientY }; $('crosshair').style.left = `${mouse.x}px`; $('crosshair').style.top = `${mouse.y}px`;
+  event.preventDefault(); moveAim(event.clientX, event.clientY);
 });
-function releaseLookPad(event) { if (event.pointerId === lookPointer) { if (lookPad.hasPointerCapture(event.pointerId)) lookPad.releasePointerCapture(event.pointerId); lookPointer = null; } }
+function releaseLookPad(event) {
+  if (event.pointerId !== lookPointer) return;
+  try { if (lookPad.hasPointerCapture(event.pointerId)) lookPad.releasePointerCapture(event.pointerId); } catch {}
+  lookPointer = null;
+}
 lookPad.addEventListener('pointerup', releaseLookPad); lookPad.addEventListener('pointercancel', releaseLookPad);
+// Keep dragging functional on mobile browsers that dispatch Touch Events but
+// do not provide reliable pointer capture outside the aim pad.
+lookPad.addEventListener('touchstart', event => {
+  if (lookPointer !== null || lookTouch !== null) return;
+  event.preventDefault();
+  const touch = event.changedTouches[0]; if (!touch) return;
+  lookTouch = touch.identifier; lookLast = { x: touch.clientX, y: touch.clientY };
+}, { passive: false });
+lookPad.addEventListener('touchmove', event => {
+  if (lookPointer !== null || lookTouch === null) return;
+  const touch = [...event.changedTouches].find(item => item.identifier === lookTouch);
+  if (!touch) return;
+  event.preventDefault(); moveAim(touch.clientX, touch.clientY);
+}, { passive: false });
+function releaseLookTouch(event) {
+  if (lookTouch !== null && [...event.changedTouches].some(touch => touch.identifier === lookTouch)) lookTouch = null;
+}
+lookPad.addEventListener('touchend', releaseLookTouch, { passive: true });
+lookPad.addEventListener('touchcancel', releaseLookTouch, { passive: true });
 $('touch-fire').addEventListener('pointerdown', event => { event.preventDefault(); firePointer = event.pointerId; $('touch-fire').setPointerCapture(firePointer); fireStart(); });
 $('touch-sprint').addEventListener('pointerdown', event => { event.preventDefault(); $('touch-sprint').setPointerCapture(event.pointerId); touchSprint = true; });
 function releaseTouchSprint() { touchSprint = false; }
