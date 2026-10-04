@@ -7,10 +7,13 @@ import { fileURLToPath } from 'node:url';
 import { WebSocketServer, WebSocket } from 'ws';
 import { createRoom, createSocialRoom, addHuman, removeHuman, acceptInput, action, tick, snapshot } from './simulation.js';
 import { maintenancePage } from './maintenance.js';
+import { issueSession, readSession, sessionCookie, clearSessionCookie, verifyGoogleCredential } from './auth.js';
 import { MAX_PLAYERS, TICK_RATE, clamp } from '../shared/world.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const MAINTENANCE = process.env.BLACKGRID_MAINTENANCE === '1';
+const AUTH_REQUIRED = process.env.AUTH_REQUIRED === '1';
+const GOOGLE_CLIENT_ID = '639238474808-f5jr46opn3520kotnbb1sieaqh45ig20.apps.googleusercontent.com';
 const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon', '.json': 'application/json', '.webmanifest': 'application/manifest+json', '.woff2': 'font/woff2', '.txt': 'text/plain; charset=utf-8', '.webm': 'video/webm', '.mp4': 'video/mp4' };
 const safeText = (value, fallback, max) => typeof value === 'string' ? value.replace(/[<>\u0000-\u001f\u007f]/g, '').trim().slice(0, max) || fallback : fallback;
 const send = (socket, data) => { if (socket.readyState === WebSocket.OPEN && socket.bufferedAmount < 256000) socket.send(JSON.stringify(data)); };
@@ -18,6 +21,8 @@ export async function createGameServer({ dev = false, persist = false, maxRooms 
   const rooms = new Map();
   const hubs = new Map();
   const sockets = new Set();
+  const activeAccounts = new Map();
+  const accountPresence = new Map();
   const perIp = new Map();
   let memory = { shots: 0, lights: 0, escapes: 0 }, tickCost = 0, saving = false;
   const dataDir = process.env.DATA_DIR || path.join(ROOT, 'data');
@@ -30,11 +35,47 @@ export async function createGameServer({ dev = false, persist = false, maxRooms 
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('Referrer-Policy', 'no-referrer');
     res.setHeader('Permissions-Policy', 'camera=(), microphone=(self), geolocation=()');
-    if (!dev) res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' ws: wss:; font-src 'self'; media-src 'self' blob:; object-src 'none'; base-uri 'self'; frame-ancestors 'self'");
+    if (!dev) res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self' https://accounts.google.com; style-src 'self' 'unsafe-inline' https://accounts.google.com; img-src 'self' data: blob: https://*.googleusercontent.com; connect-src 'self' ws: wss: https://accounts.google.com https://oauth2.googleapis.com; frame-src https://accounts.google.com; font-src 'self'; media-src 'self' blob:; object-src 'none'; base-uri 'self'; frame-ancestors 'self'");
     let url;
     try { url = new URL(req.url, 'http://localhost'); } catch { res.writeHead(400).end(); return; }
+    if (req.method === 'POST' && url.pathname === '/api/auth/google') {
+      let body = '';
+      try { for await (const chunk of req) { body += chunk; if (body.length > 12000) throw new Error('Credential too large'); } }
+      catch { res.writeHead(413).end(); return; }
+      let credential;
+      try { credential = JSON.parse(body).credential; } catch { res.writeHead(400).end(); return; }
+      if (typeof credential !== 'string' || credential.length > 10000) { res.writeHead(400).end(); return; }
+      try {
+        const claims = await verifyGoogleCredential(credential, GOOGLE_CLIENT_ID);
+        if (String(claims.email_verified) !== 'true' || !claims.sub || !claims.name) { res.writeHead(401).end(JSON.stringify({ error: 'Google account verification failed.' })); return; }
+        const user = { sub: String(claims.sub), name: safeText(claims.name, 'Player', 32), email: safeText(claims.email, '', 254) };
+        const token = issueSession(user); const secure = process.env.NODE_ENV === 'production' || Boolean(req.socket.encrypted);
+        res.setHeader('Set-Cookie', sessionCookie(token, secure)); res.setHeader('Cache-Control', 'no-store'); res.setHeader('Content-Type', 'application/json');
+        res.end(JSON.stringify({ user }));
+      } catch (error) { res.writeHead(error.name === 'TimeoutError' || error.message.includes('unavailable') ? 503 : 401).end(JSON.stringify({ error: error.message.includes('unavailable') ? 'Google sign-in is temporarily unavailable. Try again.' : 'Google account verification failed.' })); }
+      return;
+    }
+    if (req.method === 'POST' && url.pathname === '/api/auth/logout') {
+      const secure = process.env.NODE_ENV === 'production' || Boolean(req.socket.encrypted);
+      res.setHeader('Set-Cookie', clearSessionCookie(secure)); res.setHeader('Cache-Control', 'no-store'); res.writeHead(204).end(); return;
+    }
+    if (req.method === 'POST' && url.pathname === '/api/auth/presence') {
+      const user = readSession(req.headers.cookie); if (AUTH_REQUIRED && !user) { res.writeHead(401).end(); return; }
+      if (user) accountPresence.set(user.sub, { sub: user.sub, name: user.name, lastSeen: Date.now() });
+      res.setHeader('Cache-Control', 'no-store'); res.writeHead(204).end(); return;
+    }
     if (!['GET', 'HEAD'].includes(req.method)) { res.writeHead(405).end(); return; }
-    if (url.pathname === '/api/health') { res.setHeader('Content-Type', 'application/json'); res.setHeader('Cache-Control', 'no-store'); res.end(JSON.stringify({ status: 'ok', maintenance: MAINTENANCE, rooms: rooms.size, players: [...rooms.values(), ...hubs.values()].reduce((n, r) => n + [...r.players.values()].filter(p => !p.bot).length, 0), tickMs: Math.round(tickCost * 100) / 100, maxRooms, protocol: 1 })); return; }
+    if (url.pathname === '/api/health') { res.setHeader('Content-Type', 'application/json'); res.setHeader('Cache-Control', 'no-store'); res.end(JSON.stringify({ status: 'ok', maintenance: MAINTENANCE, rooms: rooms.size, players: [...rooms.values(), ...hubs.values()].reduce((n, r) => n + [...r.players.values()].filter(p => !p.bot).length, 0), onlineAccounts: activeAccounts.size, tickMs: Math.round(tickCost * 100) / 100, maxRooms, protocol: 1 })); return; }
+    if (url.pathname === '/api/auth/session') {
+      const user = readSession(req.headers.cookie); res.setHeader('Cache-Control', 'no-store'); res.setHeader('Content-Type', 'application/json');
+      res.end(JSON.stringify({ required: AUTH_REQUIRED, user: user ? { sub: user.sub, name: user.name, email: user.email } : null })); return;
+    }
+    if (url.pathname === '/api/users/online') {
+      const user = readSession(req.headers.cookie); if (AUTH_REQUIRED && !user) { res.writeHead(401).end(); return; }
+      res.setHeader('Cache-Control', 'no-store'); res.setHeader('Content-Type', 'application/json');
+      for (const [sub, account] of accountPresence) if (Date.now() - account.lastSeen > 90000) accountPresence.delete(sub);
+      res.end(JSON.stringify([...accountPresence.values()].filter(account => account.sub !== user?.sub).map(({ sub, name }) => ({ sub, name })))); return;
+    }
     if (MAINTENANCE) {
       const nonce = randomBytes(18).toString('base64');
       res.statusCode = 503; res.setHeader('Retry-After', '600'); res.setHeader('Cache-Control', 'no-store');
@@ -71,7 +112,7 @@ export async function createGameServer({ dev = false, persist = false, maxRooms 
       const allow = (process.env.ALLOWED_ORIGINS || '').split(',').filter(Boolean);
       if (origin.host !== req.headers.host && !allow.includes(origin.origin)) { socket.write('HTTP/1.1 403 Forbidden\r\n\r\n'); socket.destroy(); return; }
     }
-    wss.handleUpgrade(req, socket, head, ws => { ws.clientIp = ip; wss.emit('connection', ws, req); });
+    wss.handleUpgrade(req, socket, head, ws => { ws.clientIp = ip; ws.account = readSession(req.headers.cookie); wss.emit('connection', ws, req); });
   });
   wss.on('connection', (ws, req) => {
     const ip = ws.clientIp || req.socket.remoteAddress;
@@ -92,7 +133,8 @@ export async function createGameServer({ dev = false, persist = false, maxRooms 
       if (message.type === 'ping') { send(ws, { type: 'pong', at: typeof message.at === 'number' && Number.isFinite(message.at) ? message.at : 0 }); return; }
       if (message.type === 'join' && !ws.joined) {
         const code = typeof message.code === 'string' ? message.code.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6) : '';
-        const name = safeText(message.name, '', 16);
+        if (AUTH_REQUIRED && !ws.account) { send(ws, { type: 'error', message: 'Sign in with Google before joining an operation.' }); return; }
+        const name = safeText(ws.account?.name || message.name, '', 32);
         if (!name) { send(ws, { type: 'error', message: 'Choose a name before joining the operation.' }); return; }
         let room = code ? (rooms.get(code) || hubs.get(code)) : null;
         if (code && !room) { send(ws, { type: 'error', message: 'Operation not found. Check the room code.' }); return; }
@@ -108,6 +150,7 @@ export async function createGameServer({ dev = false, persist = false, maxRooms 
         const p = addHuman(room, ws.id, name);
         if (!p) { send(ws, { type: 'error', message: 'This operation is full (15 humans).' }); return; }
         ws.room = room; ws.joined = true; ws.binaryState = message.binaryState === true; clearTimeout(joinTimeout);
+        if (ws.account) activeAccounts.set(ws.account.sub, { sub: ws.account.sub, name: ws.account.name, count: (activeAccounts.get(ws.account.sub)?.count || 0) + 1 });
         send(ws, { type: 'welcome', id: ws.id, code: room.code, state: snapshot(room) });
         return;
       }
@@ -167,6 +210,7 @@ export async function createGameServer({ dev = false, persist = false, maxRooms 
       const count = (perIp.get(ip) || 1) - 1;
       if (count) perIp.set(ip, count); else perIp.delete(ip);
       if (ws.room) { for (const peer of sockets) if (peer.room === ws.room) send(peer, { type: 'voice-left', from: ws.id }); removeHuman(ws.room, ws.id); ws.room.lastActive = Date.now(); }
+      if (ws.account) { const active = activeAccounts.get(ws.account.sub); if (active?.count <= 1) activeAccounts.delete(ws.account.sub); else if (active) active.count--; }
     });
   });
   let frame = 0;

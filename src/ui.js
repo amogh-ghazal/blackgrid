@@ -17,7 +17,7 @@ export function renderRooms(rooms, join) {
   for (const room of active) {
     const button = document.createElement('button'); button.className = 'room-entry';
     const name = document.createElement('b'); name.textContent = room.code;
-    const detail = document.createElement('span'); detail.textContent = `${room.humans}/15  /  OP ${room.stage + 1}`;
+    const detail = document.createElement('span'); detail.textContent = `TAP TO JOIN · ${room.humans}/15 PLAYERS · OP ${room.stage + 1}`;
     button.append(name, detail); button.addEventListener('click', () => join(room.code)); $('room-list').append(button);
   }
 }
@@ -45,7 +45,7 @@ export function updateHUD(state, me) {
   text('weapon-name', me.vehicle ? 'UTILITY / INTERCEPTOR' : me.infected ? 'INFECTED / CLOSE QUARTERS' : WEAPONS[me.weapon].name);
   text('ammo-number', me.vehicle ? Math.round((state.cars.find(c => c.id === me.vehicle)?.speed || 0) * 3.6) : me.infected ? 'N/A' : me.ammo);
   text('reserve-number', me.vehicle ? 'KM/H' : me.infected ? 'MELEE' : me.reserve);
-  text('weapon-status', me.dead ? `REANIMATING / ${Math.max(0, Math.ceil(me.respawnAt - state.time))}S` : me.vehicle ? 'WASD DRIVE / E EXIT / ENGINE AUDIBLE' : me.infected ? 'BITE TO ATTACK / HUNT SURVIVORS' : me.reloadAt ? 'RELOADING…' : me.light ? 'FLASHLIGHT ON / YOU ARE VISIBLE' : 'LIGHT OFF / STAY QUIET');
+  text('weapon-status', me.dead ? `REANIMATING / ${Math.max(0, Math.ceil(me.respawnAt - state.time))}S` : me.vehicle ? (me.vehicleSeat === 'passenger' ? 'PASSENGER / AIM + FIRE / E EXIT' : 'DRIVER / WASD DRIVE / E EXIT') : me.infected ? 'BITE TO ATTACK / HUNT SURVIVORS' : me.reloadAt ? 'RELOADING…' : me.light ? 'FLASHLIGHT ON / YOU ARE VISIBLE' : 'LIGHT OFF / STAY QUIET');
   const bite = me.infected;
   text('touch-fire', bite ? 'BITE' : 'FIRE');
   $('touch-fire').setAttribute('aria-label', bite ? 'Hold to bite nearby survivors' : 'Hold to fire');

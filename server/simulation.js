@@ -11,10 +11,10 @@ function moveOutsideStation(body, dx, dz, radius = 0.55) {
 }
 const cleanInput = () => ({ x: 0, z: 0, yaw: 0, sprint: false, fire: false });
 export function createPlayer(id, name, bot = false) {
-  return { id, name, bot, x: (Math.random() - 0.5) * 7, z: 16 + Math.random() * 5, yaw: Math.PI, health: 100, stamina: 100, weapon: 'pistol', ammo: 12, reserve: 60, batteries: 0, medkits: 1, light: false, infected: false, infection: 0, dead: false, kills: 0, delivered: 0, vehicle: null, input: cleanInput(), lastInput: 0, fireAt: 0, reloadAt: 0, protection: 5, attackAt: 0, respawnAt: 0, moved: false };
+  return { id, name, bot, x: (Math.random() - 0.5) * 7, z: 16 + Math.random() * 5, yaw: Math.PI, health: 100, stamina: 100, weapon: 'pistol', ammo: 12, reserve: 60, batteries: 0, medkits: 1, light: false, infected: false, infection: 0, dead: false, kills: 0, delivered: 0, vehicle: null, vehicleSeat: null, input: cleanInput(), lastInput: 0, fireAt: 0, reloadAt: 0, protection: 5, attackAt: 0, respawnAt: 0, moved: false };
 }
 export function createRoom(code, title, targetSize = 5, memory = {}, social = false) {
-  const room = { code, title, targetSize: clamp(targetSize, 1, MAX_PLAYERS), owner: null, stage: 0, phase: social ? 'hub' : 'active', social, power: 0, required: REQUIRED[0], time: 0, elapsed: 0, players: new Map(), zombies: [], pendingReinforcements: 0, cars: WORLD.cars.map(c => ({ ...c, driver: null, speed: 0, headlights: false })), supplies: social ? [] : WORLD.supplies.map(s => ({ ...s })), events: [], noises: [], blood: [], heat: new Float32Array(36), learning: { shots: clamp(Number(memory.shots) || 0, 0, 10000), lights: clamp(Number(memory.lights) || 0, 0, 10000), escapes: clamp(Number(memory.escapes) || 0, 0, 10000) }, adaptation: 0, totalKills: 0, waveAt: 110, eventId: 0, rng: randomSeed(721), created: Date.now(), lastActive: Date.now(), stageSince: 0 };
+  const room = { code, title, targetSize: clamp(targetSize, 1, MAX_PLAYERS), owner: null, stage: 0, phase: social ? 'hub' : 'active', social, power: 0, required: REQUIRED[0], time: 0, elapsed: 0, players: new Map(), zombies: [], pendingReinforcements: 0, cars: WORLD.cars.map(c => ({ ...c, driver: null, passengers: [], speed: 0, headlights: false })), supplies: social ? [] : WORLD.supplies.map(s => ({ ...s })), events: [], noises: [], blood: [], heat: new Float32Array(36), learning: { shots: clamp(Number(memory.shots) || 0, 0, 10000), lights: clamp(Number(memory.lights) || 0, 0, 10000), escapes: clamp(Number(memory.escapes) || 0, 0, 10000) }, adaptation: 0, totalKills: 0, waveAt: 110, eventId: 0, rng: randomSeed(721), created: Date.now(), lastActive: Date.now(), stageSince: 0 };
   if (!social) spawnWave(room, 12);
   return room;
 }
@@ -41,7 +41,7 @@ export function addHuman(room, id, name) {
 export function removeHuman(room, id) {
   const p = room.players.get(id);
   if (!p) return;
-  if (p.vehicle) { const car = room.cars.find(c => c.id === p.vehicle); if (car) { car.driver = null; car.speed = 0; car.headlights = false; } }
+  if (p.vehicle) { const car = room.cars.find(c => c.id === p.vehicle); if (car) { if (car.driver === p.id) { car.driver = (car.passengers || []).shift() || null; const promoted = room.players.get(car.driver); if (promoted) promoted.vehicleSeat = 'driver'; if (!car.driver) { car.speed = 0; car.headlights = false; } } else car.passengers = (car.passengers || []).filter(id => id !== p.id); } }
   dropCells(room, p);
   room.players.delete(id);
   if (room.owner === id) room.owner = [...room.players.values()].find(p => !p.bot)?.id ?? null;
@@ -79,8 +79,9 @@ export function action(room, p, kind, yaw) {
   if (interaction.kind === 'exit') { exitVehicle(room, p); return; }
   if (interaction.kind === 'enter') {
     const car = room.cars.find(c => c.id === interaction.id);
-    car.driver = p.id; car.headlights = true; p.vehicle = car.id; p.x = car.x; p.z = car.z;
-    emit(room, 'engine', { x: car.x, z: car.z });
+    if (!car.driver) { car.driver = p.id; p.vehicleSeat = 'driver'; car.headlights = true; emit(room, 'engine', { x: car.x, z: car.z }); }
+    else { car.passengers ||= []; if (car.passengers.length >= 3) return; car.passengers.push(p.id); p.vehicleSeat = 'passenger'; }
+    p.vehicle = car.id; p.x = car.x; p.z = car.z;
   }
   if (interaction.kind === 'pickup') {
     const s = room.supplies.find(s => s.id === interaction.id);
@@ -104,7 +105,7 @@ function exitVehicle(room, p) {
   const car = room.cars.find(c => c.id === p.vehicle);
   if (!car) { p.vehicle = null; return; }
   for (const [dx, dz] of [[3, 0], [-3, 0], [0, 3], [0, -3]]) {
-    if (!blocked(car.x + dx, car.z + dz)) { p.x = car.x + dx; p.z = car.z + dz; p.vehicle = null; car.driver = null; car.speed = 0; car.headlights = false; return; }
+    if (!blocked(car.x + dx, car.z + dz)) { p.x = car.x + dx; p.z = car.z + dz; p.vehicle = null; p.vehicleSeat = null; if (car.driver === p.id) { car.driver = (car.passengers || []).shift() || null; const promoted = room.players.get(car.driver); if (promoted) promoted.vehicleSeat = 'driver'; if (!car.driver) { car.speed = 0; car.headlights = false; } } else car.passengers = (car.passengers || []).filter(id => id !== p.id); return; }
   }
 }
 export function advance(room, p) {
@@ -114,9 +115,9 @@ export function advance(room, p) {
   room.stage++;
   room.required = REQUIRED[room.stage]; room.power = 0; room.stageSince = room.time;
   room.supplies = WORLD.supplies.map(s => ({ ...s }));
-  room.cars = WORLD.cars.map(c => ({ ...c, driver: null, speed: 0, headlights: false }));
+  room.cars = WORLD.cars.map(c => ({ ...c, driver: null, passengers: [], speed: 0, headlights: false }));
   room.zombies = []; room.noises = []; room.blood = [];
-  for (const player of room.players.values()) { player.vehicle = null; player.batteries = 0; player.x = (room.rng() - 0.5) * 9; player.z = player.infected ? -75 : 16 + room.rng() * 5; player.protection = room.time + 12; player.path = null; }
+  for (const player of room.players.values()) { player.vehicle = null; player.vehicleSeat = null; player.batteries = 0; player.x = (room.rng() - 0.5) * 9; player.z = player.infected ? -75 : 16 + room.rng() * 5; player.protection = room.time + 12; player.path = null; }
   room.waveAt = room.time + 110;
   spawnWave(room, 12 + room.stage * 4);
   emit(room, 'stage', { text: `OPERATION ${room.stage + 1}: ${STAGES[room.stage]}. Restore the next district.` });
@@ -141,7 +142,8 @@ function turn(room, p) {
   emit(room, 'turn', { player: p.id, text: `${p.name} has turned. Keep your distance.` });
 }
 function hurt(room, p, amount, bite = false) {
-  if (p.dead || room.time < p.protection || !p.infected && distance(p, STATION) < SAFE_ZONE_RADIUS + 0.6) return;
+    const vehicle = p.vehicle && room.cars.find(car => car.id === p.vehicle);
+    if (p.dead || room.time < p.protection || (!p.infected && vehicle?.speed > 1) || !p.infected && distance(p, STATION) < SAFE_ZONE_RADIUS + 0.6) return;
   p.health -= amount;
   emit(room, 'hit', { player: p.id, x: p.x, z: p.z });
   if (bite && !p.infected && !p.infection && !p.vehicle) { p.infection = 75; emit(room, 'bite', { player: p.id, text: `${p.name} was bitten. Transformation in 75 seconds.` }); }
@@ -151,7 +153,7 @@ function hurt(room, p, amount, bite = false) {
   }
 }
 function shoot(room, p) {
-  if (room.time < p.fireAt || p.reloadAt || p.vehicle || p.dead) return;
+  if (room.time < p.fireAt || p.reloadAt || (p.vehicle && p.vehicleSeat !== 'passenger') || p.dead) return;
   if (p.infected) {
     if (distance(p, STATION) < SAFE_ZONE_RADIUS + 0.6) return;
     p.fireAt = room.time + 0.85;
@@ -244,7 +246,8 @@ function zombieThink(room, z, dt) {
         room.heat[index] = Math.min(100, room.heat[index] + dt);
       }
     }
-    if (distance(p, STATION) >= SAFE_ZONE_RADIUS && d < (p.vehicle ? 2.6 : 1.55) && clearLine(z, p) && room.time > z.attackAt) { hurt(room, p, p.vehicle ? 4 : 8, !p.vehicle); z.attackAt = room.time + 1.8; }
+    const car = p.vehicle && room.cars.find(c => c.id === p.vehicle);
+    if (distance(p, STATION) >= SAFE_ZONE_RADIUS && !(car?.speed > 1) && d < (p.vehicle ? 2.6 : 1.55) && clearLine(z, p) && room.time > z.attackAt) { hurt(room, p, p.vehicle ? 4 : 8, !p.vehicle); z.attackAt = room.time + 1.8; }
   }
   if (!target) {
     const noise = room.noises.filter(n => distance(z, n) < n.radius).sort((a, b) => b.until - a.until)[0];
@@ -311,6 +314,7 @@ export function tick(room, dt) {
       if (p.vehicle) {
         const car = room.cars.find(c => c.id === p.vehicle);
         if (car) {
+          if (p.vehicleSeat === 'passenger') { p.x = car.x; p.z = car.z; p.yaw = p.input.yaw; p.moved = car.speed > 1; if (p.input.fire) shoot(room, p); continue; }
           if (length > 0.1) { const desired = Math.atan2(p.input.x, p.input.z); let delta = Math.atan2(Math.sin(desired - car.yaw), Math.cos(desired - car.yaw)); car.yaw += clamp(delta, -dt * 2.8, dt * 2.8); car.speed = Math.min(17, car.speed + dt * 8); } else car.speed = Math.max(0, car.speed - dt * 15);
           const before = { x: car.x, z: car.z };
           moveBody(car, Math.sin(car.yaw) * car.speed * dt, Math.cos(car.yaw) * car.speed * dt, 1.4);
@@ -333,6 +337,7 @@ export function tick(room, dt) {
     }
     if (p.health < 65 && !p.infected && Math.floor(room.time * 2) !== Math.floor((room.time - dt) * 2)) room.blood.push({ x: p.x, z: p.z, until: room.time + 8 });
   }
+  for (const car of room.cars) for (const id of car.passengers || []) { const passenger = room.players.get(id); if (passenger && !passenger.dead) { passenger.x = car.x; passenger.z = car.z; passenger.moved = car.speed > 1; } }
   for (const z of room.zombies) if (z.health > 0) zombieThink(room, z, dt);
   room.zombies = room.zombies.filter(z => z.health > 0);
   if (room.pendingReinforcements > 0) {
@@ -346,8 +351,8 @@ export function tick(room, dt) {
 const round = n => Math.round(n * 100) / 100;
 export function snapshot(room) {
   return { code: room.code, title: room.title, owner: room.owner, stage: room.stage, phase: room.phase, power: room.power, required: room.required, time: round(room.time), adaptation: room.adaptation, totalKills: room.totalKills,
-    players: [...room.players.values()].map(p => ({ id: p.id, name: p.name, bot: p.bot, x: round(p.x), z: round(p.z), yaw: round(p.yaw), health: round(p.health), stamina: round(p.stamina), weapon: p.weapon, ammo: p.ammo, reserve: p.reserve, batteries: p.batteries, medkits: p.medkits, light: p.light, infected: p.infected, infection: round(p.infection), dead: p.dead, kills: p.kills, delivered: p.delivered, vehicle: p.vehicle, reloadAt: p.reloadAt, moved: p.moved, respawnAt: p.respawnAt })),
+    players: [...room.players.values()].map(p => ({ id: p.id, name: p.name, bot: p.bot, x: round(p.x), z: round(p.z), yaw: round(p.yaw), health: round(p.health), stamina: round(p.stamina), weapon: p.weapon, ammo: p.ammo, reserve: p.reserve, batteries: p.batteries, medkits: p.medkits, light: p.light, infected: p.infected, infection: round(p.infection), dead: p.dead, kills: p.kills, delivered: p.delivered, vehicle: p.vehicle, vehicleSeat: p.vehicleSeat, reloadAt: p.reloadAt, moved: p.moved, respawnAt: p.respawnAt })),
     zombies: room.zombies.map(z => ({ id: z.id, x: round(z.x), z: round(z.z), yaw: round(z.yaw), health: z.health, variant: z.variant, alert: z.alert })),
-    cars: room.cars.map(c => ({ id: c.id, x: round(c.x), z: round(c.z), yaw: round(c.yaw), color: c.color, driver: c.driver, speed: round(c.speed), headlights: c.headlights })),
+    cars: room.cars.map(c => ({ id: c.id, x: round(c.x), z: round(c.z), yaw: round(c.yaw), color: c.color, driver: c.driver, passengers: c.passengers || [], speed: round(c.speed), headlights: c.headlights })),
     supplies: room.supplies.filter(s => s.active).map(s => ({ ...s })), events: room.events.slice(-30) };
 }

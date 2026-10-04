@@ -79,13 +79,31 @@ test('crew fills vacancies and human joins replace bots without exceeding fiftee
   assert.equal(room.players.size, MAX_PLAYERS);
   assert.equal([...room.players.values()].filter(p => p.bot).length, 1);
 });
-test('vehicles are exclusive and leaving releases the driver', () => {
-  const { room, p } = setup();
+test('cars support passengers and automatically promote a passenger when the driver exits', () => {
+  const { room, p } = setup(2);
+  const passenger = addHuman(room, 'passenger', 'Passenger');
   const car = room.cars[0]; p.x = car.x; p.z = car.z;
   action(room, p, 'interact');
   assert.equal(p.vehicle, car.id); assert.equal(car.driver, p.id);
+  passenger.x = car.x; passenger.z = car.z;
+  action(room, passenger, 'interact');
+  assert.equal(passenger.vehicleSeat, 'passenger'); assert.deepEqual(car.passengers, [passenger.id]);
   action(room, p, 'interact');
-  assert.equal(p.vehicle, null); assert.equal(car.driver, null);
+  assert.equal(p.vehicle, null); assert.equal(car.driver, passenger.id); assert.equal(passenger.vehicleSeat, 'driver');
+});
+test('a passenger can fire from a moving vehicle while moving occupants are protected from zombie bites', () => {
+  const { room, p } = setup(2);
+  const passenger = addHuman(room, 'passenger', 'Passenger');
+  const car = room.cars[0]; p.x = car.x; p.z = car.z; action(room, p, 'interact');
+  passenger.x = car.x; passenger.z = car.z; action(room, passenger, 'interact');
+  car.speed = 10;
+  room.zombies = [{ id: 'target', x: car.x, z: car.z + 6, yaw: 0, health: 88, attackAt: 0, memory: null, memoryUntil: 0, wanderAt: 0, variant: 0, alert: false, path: null }];
+  action(room, passenger, 'fire', 0);
+  assert.ok(passenger.ammo < 12);
+  assert.ok(room.zombies[0].health < 88, 'passenger shot should damage infected');
+  const health = passenger.health; room.time = 10;
+  tick(room, 0.1);
+  assert.equal(passenger.health, health, 'zombies cannot damage a player while their car is moving');
 });
 test('campaign advances through three operations and only extraction completes it', () => {
   const { room, p } = setup();

@@ -105,7 +105,7 @@ export function nearestInteraction(player, state) {
   if (state.power >= state.required && distance(player, EXTRACTION) < 8) return { kind: 'extract', label: state.stage < 2 ? 'Deploy to next operation' : 'Evacuate the city' };
   const supply = state.supplies.filter(s => s.active && (s.type !== 'battery' || player.batteries < 2)).sort((a, b) => distance(a, player) - distance(b, player))[0];
   if (supply && distance(supply, player) < 2.8) return { kind: 'pickup', id: supply.id, label: `Collect ${supply.type === 'battery' ? 'power cell' : supply.type}` };
-  const car = state.cars.find(c => !c.driver && distance(c, player) < 3.6);
-  if (car) return { kind: 'enter', id: car.id, label: 'Drive vehicle' };
+  const car = state.cars.find(c => (!c.driver || (c.passengers || []).length < 3) && distance(c, player) < 3.6);
+  if (car) return { kind: 'enter', id: car.id, label: car.driver ? 'Ride as passenger' : 'Drive vehicle' };
   return null;
 }

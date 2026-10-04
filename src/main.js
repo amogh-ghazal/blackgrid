@@ -10,16 +10,58 @@ let game, socket = null, state = null, selfId = null, joining = false, intention
 let mouse = { x: innerWidth / 2, y: innerHeight / 2 }, firing = false, firePointer = null, fireTouch = null, keys = new Set(), touchMove = { x: 0, y: 0 }, touchSprint = false, paused = false, pingTimer, frameCount = 0, frameTime = 0, lastFrame = performance.now(), lastRender = performance.now(), renderAccumulator = 0;
 let settings = { quality: 'medium', volume: 45, motion: false, name: '', qualityChosen: false };
 let pendingJoinCode = null, lowFpsNotified = false, micPending = false;
-try { const saved = JSON.parse(localStorage.getItem('blackgrid-settings') || '{}'); settings = { ...settings, ...saved }; if (saved.qualityChosen !== true) settings.quality = 'medium'; } catch {}
+let account = null, authRequired = true, mobileDevice = navigator.maxTouchPoints > 0 || matchMedia('(pointer: coarse)').matches;
+try { const saved = JSON.parse(localStorage.getItem('blackgrid-settings') || '{}'); settings = { ...settings, ...saved }; if (saved.qualityChosen !== true) settings.quality = mobileDevice ? 'high' : 'medium'; } catch {}
 if (!['low', 'medium', 'high'].includes(settings.quality)) settings.quality = 'medium';
 if (!settings.name || settings.name.toUpperCase() === 'SURVIVOR') settings.name = '';
 settings.volume = Number.isFinite(Number(settings.volume)) ? Math.max(0, Math.min(100, Number(settings.volume))) : 45;
-$('quality').value = settings.quality; $('volume').value = settings.volume; $('motion').checked = settings.motion === true; $('callsign').value = typeof settings.name === 'string' ? settings.name.slice(0, 16) : '';
+$('quality').value = settings.quality; $('volume').value = settings.volume; $('motion').checked = settings.motion === true; $('callsign').value = '';
+if (mobileDevice) { $('graphics-setting').classList.add('hidden'); $('mobile-graphics-note').classList.remove('hidden'); $('quality').value = 'high'; settings.quality = 'high'; }
 $('volume-label').textContent = `${settings.volume}%`; audio.setVolume(settings.volume / 100);
 const invite = new URLSearchParams(location.search).get('room');
 if (invite) $('room-code').value = invite.replace(/[^a-zA-Z0-9]/g, '').slice(0, 6).toUpperCase();
 
 function saveSettings() { try { localStorage.setItem('blackgrid-settings', JSON.stringify(settings)); } catch {} }
+const GOOGLE_CLIENT_ID = '639238474808-f5jr46opn3520kotnbb1sieaq45ig20.apps.googleusercontent.com';
+function renderAccount() {
+  $('auth-status').textContent = account ? 'Signed in as ' + account.name + '. This device stays signed in until you log out.' : 'Sign in to play. Your Google profile name will be your in-game name.';
+  $('callsign').classList.toggle('hidden', authRequired);
+  if (!authRequired) { $('callsign').placeholder = 'ENTER YOUR NAME'; $('callsign').setAttribute('aria-label', 'Player name'); }
+  $('google-signin').classList.toggle('hidden', Boolean(account) || !authRequired);
+  $('logout').classList.toggle('hidden', !account); $('friends-open').classList.toggle('hidden', !account);
+  $('deploy').disabled = authRequired && !account; $('join-form').querySelector('button').disabled = authRequired && !account;
+}
+async function acceptGoogleCredential(credential) {
+  try {
+    const response = await fetch('/api/auth/google', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ credential }) });
+    const result = await response.json(); if (!response.ok) throw new Error(result.error || 'Google sign-in failed.');
+    account = result.user; renderAccount(); presence(); toast('WELCOME, ' + account.name.toUpperCase());
+  } catch (error) { $('auth-status').textContent = error.message; }
+}
+async function initializeAuth() {
+  try {
+    const response = await fetch('/api/auth/session', { cache: 'no-store' }); const result = await response.json();
+    authRequired = result.required === true; account = result.user || null; renderAccount();
+    if (!account && authRequired) {
+      const script = document.createElement('script'); script.src = 'https://accounts.google.com/gsi/client'; script.async = true; script.defer = true;
+      script.onload = () => { window.google?.accounts.id.initialize({ client_id: GOOGLE_CLIENT_ID, callback: ({ credential }) => acceptGoogleCredential(credential), auto_select: true, itp_support: true }); window.google?.accounts.id.renderButton($('google-signin'), { theme: 'outline', size: 'large', shape: 'rectangular', text: 'signin_with', width: 280 }); };
+      script.onerror = () => { $('auth-status').textContent = 'Google sign-in did not load. Check your connection and reload.'; }; document.head.append(script);
+    }
+  } catch { $('auth-status').textContent = 'Unable to check sign-in. Reload to retry.'; }
+}
+async function presence() { if (account) fetch('/api/auth/presence', { method: 'POST', keepalive: true }).catch(() => {}); }
+const friendsKey = () => 'blackgrid-friends-' + (account?.sub || '');
+async function showFriends() {
+  show('friends'); const list = $('friends-list'); list.replaceChildren();
+  try {
+    const response = await fetch('/api/users/online', { cache: 'no-store' }); const online = response.ok ? await response.json() : [];
+    const ids = new Set(JSON.parse(localStorage.getItem(friendsKey()) || '[]'));
+    for (const user of online) { const row = document.createElement('div'); row.className = 'friend-row'; const label = document.createElement('span'); label.textContent = user.name + (ids.has(user.sub) ? ' · FRIEND / ONLINE' : ' · ONLINE'); const action = document.createElement('button'); action.className = 'secondary-button'; action.textContent = ids.has(user.sub) ? 'REMOVE' : 'ADD FRIEND'; action.onclick = () => { if (ids.has(user.sub)) ids.delete(user.sub); else ids.add(user.sub); localStorage.setItem(friendsKey(), JSON.stringify([...ids])); showFriends(); }; row.append(label, action); list.append(row); }
+    const offline = [...ids].filter(id => !online.some(user => user.sub === id));
+    for (const sub of offline) { const row = document.createElement('div'); row.className = 'friend-row'; const label = document.createElement('span'); label.textContent = 'FRIEND · OFFLINE'; const remove = document.createElement('button'); remove.className = 'secondary-button'; remove.textContent = 'REMOVE'; remove.onclick = () => { ids.delete(sub); localStorage.setItem(friendsKey(), JSON.stringify([...ids])); showFriends(); }; row.append(label, remove); list.append(row); }
+    if (!online.length && !offline.length) { const note = document.createElement('p'); note.className = 'settings-note'; note.textContent = 'No other players are online yet. Check again later to add them.'; list.append(note); }
+  } catch { list.textContent = 'Friends list is temporarily unavailable.'; }
+}
 function send(data) { if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify(data)); }
 function movementInput() {
   const yaw = game.aim(mouse.x, mouse.y);
@@ -82,8 +124,9 @@ function enterAfterlight() { show('afterlight', false); show('social-panel', tru
 function join(code = '') {
   if (joining) return;
   if (isPortraitTouch()) { pendingJoinCode = code; show('orientation-gate'); $('orientation-lock').focus(); requestLandscape(); return; }
-  const name = $('callsign').value.trim().slice(0, 16);
-  if (!name) { $('lobby-error').textContent = 'Enter your name before joining or starting an operation.'; $('callsign').focus(); return; }
+  if (authRequired && !account) { $('lobby-error').textContent = 'Sign in with Google before joining or starting an operation.'; return; }
+  const name = (account?.name || $('callsign').value).trim().slice(0, 32);
+  if (!name) { $('lobby-error').textContent = 'Your account name is required to join.'; return; }
   audio.start().catch(() => {});
   settings.name = name; saveSettings();
   $('lobby-error').textContent = ''; setBusy(true);
@@ -166,6 +209,10 @@ $('deploy').addEventListener('click', () => join());
 $('callsign').addEventListener('input', () => { if ($('callsign').value.trim()) $('lobby-error').textContent = ''; });
 $('join-form').addEventListener('submit', event => { event.preventDefault(); const code = $('room-code').value.trim(); if (!/^[a-zA-Z0-9]{6}$/.test(code)) { $('lobby-error').textContent = 'Enter the six-character code from your crew.'; return; } join(code); });
 $('refresh-rooms').addEventListener('click', refreshRooms);
+$('logout').addEventListener('click', async () => { await fetch('/api/auth/logout', { method: 'POST' }).catch(() => {}); if (socket) leave(); account = null; localStorage.removeItem(friendsKey()); renderAccount(); $('auth-status').textContent = 'You are signed out. Sign in again to play.'; window.google?.accounts.id.disableAutoSelect(); });
+$('friends-open').addEventListener('click', showFriends);
+$('friends-close').addEventListener('click', () => show('friends', false));
+$('friend-add').addEventListener('click', () => { const id = $('friend-code').value.trim(); if (!id || !account) return; try { const ids = new Set(JSON.parse(localStorage.getItem(friendsKey()) || '[]')); ids.add(id); localStorage.setItem(friendsKey(), JSON.stringify([...ids])); $('friend-code').value = ''; showFriends(); } catch {} });
 $('settings-open').addEventListener('click', () => show('settings'));
 $('hosting-open').addEventListener('click', () => show('hosting'));
 $('hosting-close').addEventListener('click', () => show('hosting', false));
@@ -246,7 +293,13 @@ window.addEventListener('pointercancel', event => { if (event.pointerId === fire
 window.addEventListener('blur', clearInput);
 window.addEventListener('focus', clearInput);
 window.addEventListener('contextmenu', event => { if (selfId) event.preventDefault(); });
-$('world').addEventListener('wheel', event => { if (selfId && !modalOpen()) { event.preventDefault(); game.zoom = Math.max(0.7, Math.min(1.5, game.zoom + event.deltaY * 0.0005)); } }, { passive: false });
+$('world').addEventListener('wheel', event => { if (selfId && !modalOpen()) { event.preventDefault(); if (!mobileDevice) game.zoom = Math.max(0.7, Math.min(1.5, game.zoom + event.deltaY * 0.0005)); } }, { passive: false });
+if (mobileDevice) {
+  const blockZoom = event => event.preventDefault();
+  for (const type of ['gesturestart', 'gesturechange', 'gestureend']) document.addEventListener(type, blockZoom, { passive: false });
+  document.addEventListener('touchmove', event => { if (event.touches.length > 1) event.preventDefault(); }, { passive: false });
+  document.addEventListener('dblclick', event => event.preventDefault(), { passive: false });
+}
 window.addEventListener('resize', () => {
   game?.resize();
   if (document.body.classList.contains('touch-device')) {
@@ -373,7 +426,7 @@ function render(now) {
 }
 try {
   game = new GameScene($('world')); game.setQuality(settings.quality); game.reducedMotion = settings.motion;
-  show('loading', false); show('lobby');
+  show('loading', false); show('lobby'); initializeAuth(); setInterval(presence, 30000);
   $('crosshair').style.left = `${mouse.x}px`; $('crosshair').style.top = `${mouse.y}px`;
   requestAnimationFrame(render); refreshRooms();
   window.__BLACKGRID__ = { get diagnostics() { const me = state?.players.find(p => p.id === selfId); return { connected: socket?.readyState === WebSocket.OPEN, room: lastCode, player: selfId, x: me?.x, z: me?.z, yaw: me?.yaw, light: me?.light, phase: state?.phase, humans: state?.players.filter(p => !p.bot).length, nameTags: [...game.actors.values()].filter(actor => actor.userData.nameTag).length, crew: state?.players.length, zombies: state?.zombies.length, drawCalls: game.renderer.info.render.calls, triangles: game.renderer.info.render.triangles, quality: game.quality, view: game.viewMode, firing, firePointer, networkCodec: socket?.binaryState ? 'gzip' : 'json', latency }; } };
