@@ -22,7 +22,7 @@ const invite = new URLSearchParams(location.search).get('room');
 if (invite) $('room-code').value = invite.replace(/[^a-zA-Z0-9]/g, '').slice(0, 6).toUpperCase();
 
 function saveSettings() { try { localStorage.setItem('blackgrid-settings', JSON.stringify(settings)); } catch {} }
-const GOOGLE_CLIENT_ID = '639238474808-f5jr46opn3520kotnbb1sieaq45ig20.apps.googleusercontent.com';
+const GOOGLE_CLIENT_ID = '639238474808-kb8fr4gudaskm0596apsqnpg6jns76ho.apps.googleusercontent.com';
 function renderAccount() {
   $('auth-status').textContent = account ? 'Signed in as ' + account.name + '. This device stays signed in until you log out.' : 'Sign in to play. Your Google profile name will be your in-game name.';
   $('callsign').classList.toggle('hidden', authRequired);

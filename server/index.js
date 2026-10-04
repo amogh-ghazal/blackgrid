@@ -13,7 +13,7 @@ import { MAX_PLAYERS, TICK_RATE, clamp } from '../shared/world.js';
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const MAINTENANCE = process.env.BLACKGRID_MAINTENANCE === '1';
 const AUTH_REQUIRED = process.env.AUTH_REQUIRED === '1';
-const GOOGLE_CLIENT_ID = '639238474808-f5jr46opn3520kotnbb1sieaqh45ig20.apps.googleusercontent.com';
+const GOOGLE_CLIENT_ID = '639238474808-kb8fr4gudaskm0596apsqnpg6jns76ho.apps.googleusercontent.com';
 const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon', '.json': 'application/json', '.webmanifest': 'application/manifest+json', '.woff2': 'font/woff2', '.txt': 'text/plain; charset=utf-8', '.webm': 'video/webm', '.mp4': 'video/mp4' };
 const safeText = (value, fallback, max) => typeof value === 'string' ? value.replace(/[<>\u0000-\u001f\u007f]/g, '').trim().slice(0, max) || fallback : fallback;
 const send = (socket, data) => { if (socket.readyState === WebSocket.OPEN && socket.bufferedAmount < 256000) socket.send(JSON.stringify(data)); };
