@@ -6,9 +6,11 @@ import { gzipSync } from 'node:zlib';
 import { fileURLToPath } from 'node:url';
 import { WebSocketServer, WebSocket } from 'ws';
 import { createRoom, createSocialRoom, addHuman, removeHuman, acceptInput, action, tick, snapshot } from './simulation.js';
+import { maintenancePage } from './maintenance.js';
 import { MAX_PLAYERS, TICK_RATE, clamp } from '../shared/world.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const MAINTENANCE = process.env.BLACKGRID_MAINTENANCE === '1';
 const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon', '.json': 'application/json', '.webmanifest': 'application/manifest+json', '.woff2': 'font/woff2', '.txt': 'text/plain; charset=utf-8', '.webm': 'video/webm', '.mp4': 'video/mp4' };
 const safeText = (value, fallback, max) => typeof value === 'string' ? value.replace(/[<>\u0000-\u001f\u007f]/g, '').trim().slice(0, max) || fallback : fallback;
 const send = (socket, data) => { if (socket.readyState === WebSocket.OPEN && socket.bufferedAmount < 256000) socket.send(JSON.stringify(data)); };
@@ -32,7 +34,14 @@ export async function createGameServer({ dev = false, persist = false, maxRooms 
     let url;
     try { url = new URL(req.url, 'http://localhost'); } catch { res.writeHead(400).end(); return; }
     if (!['GET', 'HEAD'].includes(req.method)) { res.writeHead(405).end(); return; }
-    if (url.pathname === '/api/health') { res.setHeader('Content-Type', 'application/json'); res.setHeader('Cache-Control', 'no-store'); res.end(JSON.stringify({ status: 'ok', rooms: rooms.size, players: [...rooms.values(), ...hubs.values()].reduce((n, r) => n + [...r.players.values()].filter(p => !p.bot).length, 0), tickMs: Math.round(tickCost * 100) / 100, maxRooms, protocol: 1 })); return; }
+    if (url.pathname === '/api/health') { res.setHeader('Content-Type', 'application/json'); res.setHeader('Cache-Control', 'no-store'); res.end(JSON.stringify({ status: 'ok', maintenance: MAINTENANCE, rooms: rooms.size, players: [...rooms.values(), ...hubs.values()].reduce((n, r) => n + [...r.players.values()].filter(p => !p.bot).length, 0), tickMs: Math.round(tickCost * 100) / 100, maxRooms, protocol: 1 })); return; }
+    if (MAINTENANCE) {
+      const nonce = randomBytes(18).toString('base64');
+      res.statusCode = 503; res.setHeader('Retry-After', '600'); res.setHeader('Cache-Control', 'no-store');
+      res.setHeader('Content-Type', 'text/html; charset=utf-8');
+      res.setHeader('Content-Security-Policy', `default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-${nonce}'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'`);
+      res.end(req.method === 'HEAD' ? undefined : maintenancePage(nonce)); return;
+    }
     if (url.pathname === '/api/rooms') {
       res.setHeader('Content-Type', 'application/json'); res.setHeader('Cache-Control', 'no-store');
       res.end(JSON.stringify([...rooms.values()].map(r => ({ code: r.code, title: r.title, humans: [...r.players.values()].filter(p => !p.bot).length, crew: r.players.size, max: MAX_PLAYERS, stage: r.stage, phase: r.phase, adaptation: r.adaptation })))); return;
@@ -52,6 +61,7 @@ export async function createGameServer({ dev = false, persist = false, maxRooms 
   });
   const wss = new WebSocketServer({ noServer: true, maxPayload: 4096, perMessageDeflate: { threshold: 1024, serverNoContextTakeover: true, clientNoContextTakeover: true, serverMaxWindowBits: 10, concurrencyLimit: 4, zlibDeflateOptions: { level: 3, memLevel: 5 } } });
   server.on('upgrade', (req, socket, head) => {
+    if (MAINTENANCE) { socket.write('HTTP/1.1 503 Service Unavailable\r\nRetry-After: 600\r\nConnection: close\r\n\r\n'); socket.destroy(); return; }
     if (req.url !== '/socket') { if (!dev) socket.destroy(); return; }
     const ip = req.headers['cf-connecting-ip'] || req.socket.remoteAddress;
     if (sockets.size >= 2048 || (perIp.get(ip) || 0) >= 64) { socket.write('HTTP/1.1 429 Too Many Requests\r\n\r\n'); socket.destroy(); return; }
