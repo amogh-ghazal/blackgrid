@@ -87,7 +87,20 @@ try {
   await mobile.setViewportSize({ width: 844, height: 390 });
   await mobile.locator('#orientation-gate').waitFor({ state: 'hidden' });
   await mobile.locator('#hud').waitFor({ state: 'visible', timeout: 15000 });
-  if (await mobile.locator('#mission-briefing').isVisible()) await mobile.locator('#briefing-proceed').tap();
+  if (await mobile.locator('#mission-briefing').isVisible()) { await mobile.locator('#briefing-proceed').tap(); await mobile.locator('#mission-briefing').waitFor({ state: 'hidden' }); }
+  const aimBounds = await mobile.locator('#look-pad').boundingBox();
+  const aimStart = await mobile.locator('#crosshair').evaluate(el => parseFloat(el.style.left));
+  const touchSession = await mobile.context().newCDPSession(mobile);
+  await touchSession.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ id: 42, x: aimBounds.x + aimBounds.width / 2, y: aimBounds.y + aimBounds.height / 2 }] });
+  await touchSession.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ id: 42, x: aimBounds.x + aimBounds.width / 2 + 28, y: aimBounds.y + aimBounds.height / 2 }] });
+  const aimDuringDrag = await mobile.locator('#look-knob').evaluate(el => el.style.transform);
+  const crosshairDuringDrag = await mobile.locator('#crosshair').evaluate(el => parseFloat(el.style.left));
+  assert.notEqual(aimDuringDrag, 'translate(0, 0)', 'Aim knob should visibly follow the finger while held');
+  assert.ok(crosshairDuringDrag > aimStart, 'Dragging the aim control right should turn aim right');
+  await touchSession.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+  await touchSession.detach();
+  assert.equal(await mobile.locator('#look-knob').evaluate(el => el.style.transform), 'translate(0px, 0px)', 'Aim knob should spring back to center on release');
+  assert.equal(await mobile.locator('#crosshair').evaluate(el => parseFloat(el.style.left)), crosshairDuringDrag, 'Aim direction should remain where it was set after release');
   assert.equal((await mobile.evaluate(() => window.__BLACKGRID__.diagnostics)).quality, 'high', 'Phones should start in high detail');
   await mobile.locator('#pause-open').tap(); await mobile.locator('#ingame-settings').tap();
   assert.equal(await mobile.locator('#graphics-setting').evaluate(el => getComputedStyle(el).display), 'none', 'Mobile users should not see desktop graphics presets');

@@ -77,7 +77,7 @@ function movementInput() {
   const strafe = Number(keys.has('KeyA')) - Number(keys.has('KeyD')) - touchMove.x;
   return { type: 'input', x: forward * Math.sin(yaw) + strafe * Math.cos(yaw), z: forward * Math.cos(yaw) - strafe * Math.sin(yaw), yaw, sprint: touchSprint || keys.has('ShiftLeft') || keys.has('ShiftRight'), fire: firing };
 }
-function clearInput() { keys.clear(); firing = false; firePointer = null; fireTouch = null; lookTouch = null; moveTouch = null; touchMove.x = 0; touchMove.y = 0; touchSprint = false; if (typeof movePointer !== 'undefined' && movePointer !== null) { if (moveStick.hasPointerCapture(movePointer)) moveStick.releasePointerCapture(movePointer); movePointer = null; moveKnob.style.transform = 'translate(0, 0)'; } if (typeof lookPointer !== 'undefined' && lookPointer !== null) { if (lookPad.hasPointerCapture(lookPointer)) lookPad.releasePointerCapture(lookPointer); lookPointer = null; } if (socket?.readyState === WebSocket.OPEN && selfId) send(movementInput()); }
+function clearInput() { keys.clear(); firing = false; firePointer = null; fireTouch = null; lookTouch = null; moveTouch = null; touchMove.x = 0; touchMove.y = 0; touchSprint = false; if (typeof movePointer !== 'undefined' && movePointer !== null) { if (moveStick.hasPointerCapture(movePointer)) moveStick.releasePointerCapture(movePointer); movePointer = null; moveKnob.style.transform = 'translate(0, 0)'; } if (typeof lookPointer !== 'undefined' && lookPointer !== null) { if (lookPad.hasPointerCapture(lookPointer)) lookPad.releasePointerCapture(lookPointer); lookPointer = null; } if (typeof lookPad !== 'undefined') { lookPad.classList.remove('is-active'); lookKnob.style.transform = 'translate(0px, 0px)'; } if (socket?.readyState === WebSocket.OPEN && selfId) send(movementInput()); }
 function setBusy(value) { joining = value; $('deploy').disabled = value; $('join-form').querySelector('button').disabled = value; $('deploy').textContent = value ? 'ESTABLISHING CONNECTION' : 'START AN OPERATION'; }
 function setPause(value) { paused = value; show('pause', value); if (value) clearInput(); }
 const modalOpen = () => paused || ['settings', 'field-guide', 'results', 'connection-lost', 'afterlight', 'mission-briefing', 'how-to-play'].some(id => !$(id).classList.contains('hidden'));
@@ -391,18 +391,27 @@ function releaseMoveTouch(event) {
 moveStick.addEventListener('touchend', releaseMoveTouch, { passive: true });
 moveStick.addEventListener('touchcancel', releaseMoveTouch, { passive: true });
 
-const lookPad = $('look-pad');
+const lookPad = $('look-pad'), lookKnob = $('look-knob');
 let lookPointer = null, lookTouch = null, lookLast = { x: 0, y: 0 };
+function positionAimKnob(clientX, clientY) {
+  const bounds = lookPad.getBoundingClientRect();
+  const radius = Math.max(1, (Math.min(bounds.width, bounds.height) - lookKnob.offsetWidth) / 2 - 3);
+  const dx = clientX - (bounds.left + bounds.width / 2), dy = clientY - (bounds.top + bounds.height / 2);
+  const length = Math.hypot(dx, dy), scale = length > radius ? radius / length : 1;
+  lookKnob.style.transform = `translate(${dx * scale}px, ${dy * scale}px)`;
+}
 function moveAim(clientX, clientY) {
   mouse.x = Math.max(0, Math.min(innerWidth, mouse.x + (clientX - lookLast.x) * 0.8));
   mouse.y = Math.max(0, Math.min(innerHeight, mouse.y + (clientY - lookLast.y) * 0.45));
   lookLast = { x: clientX, y: clientY };
+  positionAimKnob(clientX, clientY);
   $('crosshair').style.left = `${mouse.x}px`; $('crosshair').style.top = `${mouse.y}px`;
 }
 lookPad.addEventListener('pointerdown', event => {
-  event.preventDefault(); lookPointer = event.pointerId; lookTouch = null;
+  event.preventDefault(); lookPointer = event.pointerId; lookTouch = null; lookPad.classList.add('is-active');
   lookLast = { x: event.clientX, y: event.clientY };
-  try { lookPad.setPointerCapture(lookPointer); } catch { lookPointer = null; }
+  positionAimKnob(event.clientX, event.clientY);
+  try { lookPad.setPointerCapture(lookPointer); } catch { lookPointer = null; lookPad.classList.remove('is-active'); lookKnob.style.transform = 'translate(0px, 0px)'; }
 });
 lookPad.addEventListener('pointermove', event => {
   if (event.pointerId !== lookPointer) return;
@@ -411,7 +420,7 @@ lookPad.addEventListener('pointermove', event => {
 function releaseLookPad(event) {
   if (event.pointerId !== lookPointer) return;
   try { if (lookPad.hasPointerCapture(event.pointerId)) lookPad.releasePointerCapture(event.pointerId); } catch {}
-  lookPointer = null;
+  lookPointer = null; lookPad.classList.remove('is-active'); lookKnob.style.transform = 'translate(0px, 0px)';
 }
 lookPad.addEventListener('pointerup', releaseLookPad); lookPad.addEventListener('pointercancel', releaseLookPad);
 // Keep dragging functional on mobile browsers that dispatch Touch Events but
@@ -420,7 +429,7 @@ lookPad.addEventListener('touchstart', event => {
   if (lookPointer !== null || lookTouch !== null) return;
   event.preventDefault();
   const touch = event.changedTouches[0]; if (!touch) return;
-  lookTouch = touch.identifier; lookLast = { x: touch.clientX, y: touch.clientY };
+  lookTouch = touch.identifier; lookLast = { x: touch.clientX, y: touch.clientY }; lookPad.classList.add('is-active'); positionAimKnob(touch.clientX, touch.clientY);
 }, { passive: false });
 lookPad.addEventListener('touchmove', event => {
   if (lookPointer !== null || lookTouch === null) return;
@@ -429,7 +438,7 @@ lookPad.addEventListener('touchmove', event => {
   event.preventDefault(); moveAim(touch.clientX, touch.clientY);
 }, { passive: false });
 function releaseLookTouch(event) {
-  if (lookTouch !== null && [...event.changedTouches].some(touch => touch.identifier === lookTouch)) { lookTouch = null; lookKnob.style.transform = 'translate(0, 0)'; }
+  if (lookTouch !== null && [...event.changedTouches].some(touch => touch.identifier === lookTouch)) { lookTouch = null; lookPad.classList.remove('is-active'); lookKnob.style.transform = 'translate(0px, 0px)'; }
 }
 lookPad.addEventListener('touchend', releaseLookTouch, { passive: true });
 lookPad.addEventListener('touchcancel', releaseLookTouch, { passive: true });
