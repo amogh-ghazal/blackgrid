@@ -92,7 +92,7 @@ export class GameScene {
     this.camera = new THREE.PerspectiveCamera(48, 1, 0.15, 300);
     this.camera.position.set(28, 32, 48); this.camera.lookAt(0, 2, 0);
     this.viewMode = 'third'; this.firstPersonAnchor = 0; this.localAimYaw = null;
-    this.clock = 0; this.quality = 'medium'; this.reducedMotion = false; this.zoom = 1; this.playing = false; this.self = null; this.state = null;
+    this.clock = 0; this.quality = 'medium'; this.reducedMotion = false; this.zoom = 1; this.playing = false; this.self = null; this.state = null; this.occlusionAt = 0;
     this.actors = new Map(); this.vehicles = new Map(); this.pickups = new Map(); this.effects = []; this.buildings = []; this.streetLights = []; this.lastPower = -1; this.lastStage = -1; this.shake = 0;
     this.raycaster = new THREE.Raycaster(); this.mouse = new THREE.Vector2(); this.groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -1); this.aimPoint = new THREE.Vector3(); this.temp = new THREE.Vector3();
     this.nightSky = new THREE.Color(0x0d1b23); this.daySky = new THREE.Color(0x8baab0); this.nightFog = new THREE.Color(0x10242a); this.dayFog = new THREE.Color(0x9bb3aa); this.daylight = 0;
@@ -332,7 +332,10 @@ export class GameScene {
       box(drone, 0, 0, 0, 0.58, 0.2, 0.42, material(0x35433d, 0.45, 0.4)); box(drone, 0, -0.12, 0.12, 0.25, 0.14, 0.22, emissive(0xc1ae82, 0.7));
       const rotors = droneRotors; for (const [x, z] of [[-0.62,-0.5],[0.62,-0.5],[-0.62,0.5],[0.62,0.5]]) { box(drone, x / 2, 0.05, z / 2, 0.9, 0.06, 0.07, material(0x4f5b51)); const rotor = box(drone, x, 0.11, z, 0.42, 0.035, 0.09, material(0x95917b)); rotors.push(rotor); cylinder(drone, x, 0.04, z, 0.12, 0.12, emissive(0xb99d67, 0.65)); }
       const beam = new THREE.Mesh(new THREE.ConeGeometry(2.4, 8, 20, 1, true), new THREE.MeshBasicMaterial({ color: 0xd7d0ae, transparent: true, opacity: 0.12, side: THREE.DoubleSide, depthWrite: false })); beam.rotation.x = Math.PI; beam.position.y = -3.9; drone.add(beam);
-      const beacon = this.beacon(0, 0, 0xc7b88e, 5); beacon.children[0].material.opacity = 0.09; beacon.children[1].scale.setScalar(0.3); beacon.children[1].position.y = 0; group.add(beacon);
+      const lightPool = new THREE.Mesh(new THREE.CircleGeometry(1.2, 32), new THREE.MeshBasicMaterial({ color: 0xc7b88e, transparent: true, opacity: 0.15, side: THREE.DoubleSide, depthWrite: false }));
+      lightPool.rotation.x = -Math.PI / 2; lightPool.position.y = -0.12; drone.add(lightPool);
+      const lightEdge = new THREE.Mesh(new THREE.RingGeometry(0.78, 0.86, 32), new THREE.MeshBasicMaterial({ color: 0xc7b88e, transparent: true, opacity: 0.48, side: THREE.DoubleSide, depthWrite: false }));
+      lightEdge.rotation.x = -Math.PI / 2; lightEdge.position.y = -0.1; drone.add(lightEdge);
     } else if (data.type === 'battery') {
       box(body, 0, 0, 0, 0.5, 0.75, 0.32, material(0x86785b, 0.4, 0.6)); box(body, 0, 0, 0.18, 0.22, 0.47, 0.03, emissive(color, 1.3)); box(body, 0, 0.44, 0, 0.24, 0.12, 0.18, material(0x9fa490));
       const beacon = this.beacon(0, 0, color, 6); beacon.children[1].position.y = 2.4; beacon.children[1].scale.setScalar(0.5); group.add(beacon);
@@ -475,11 +478,18 @@ export class GameScene {
       this.moon.position.set(target.x - 35, 70, target.z + 15); this.moon.target.position.copy(target);
       this.flashlight.position.set(target.x, 1.6, target.z); this.flashlight.target.position.set(target.x + Math.sin(data.yaw) * 15, 0, target.z + Math.cos(data.yaw) * 15); this.flashlight.intensity = data.light && !data.infected && !data.dead ? 75 : data.vehicle ? 100 : 0;
       this.rain.position.set(target.x, 0, target.z);
+      if (this.clock >= this.occlusionAt) {
+        for (const building of this.buildings) {
+          const b = building.data;
+          const occluding = Math.abs(b.x - target.x) < b.w / 2 + 3 && b.z > target.z - 2 && b.z < target.z + 24;
+          building.targetOpacity = occluding ? 0.17 : 1;
+        }
+        this.occlusionAt = this.clock + 0.1;
+      }
       for (const building of this.buildings) {
-        const b = building.data;
-        const occluding = Math.abs(b.x - target.x) < b.w / 2 + 3 && b.z > target.z - 2 && b.z < target.z + 24;
-        building.opacity += ((occluding ? 0.17 : 1) - building.opacity) * Math.min(1, dt * 7);
-        for (const mat of building.materials) { mat.opacity = building.opacity; mat.depthWrite = building.opacity > 0.9; }
+        const before = building.opacity;
+        building.opacity += ((building.targetOpacity ?? 1) - building.opacity) * Math.min(1, dt * 7);
+        if (Math.abs(building.opacity - before) > 0.006) for (const mat of building.materials) { mat.opacity = building.opacity; mat.depthWrite = building.opacity > 0.9; }
       }
     } else {
       const t = this.clock * 0.035;

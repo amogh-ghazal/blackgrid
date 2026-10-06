@@ -235,9 +235,21 @@ export async function createGameServer({ dev = false, persist = false, maxRooms 
       if (frame % 2 === 0) {
         const events = room.events.filter(event => event.id > (room.broadcastEventId || 0));
         room.broadcastEventId = room.eventId;
+        const state = snapshot(room); state.events = events;
+        const payload = JSON.stringify({ type: 'state', state });
+        const compressedPayload = gzipSync(payload, { level: 3 });
         for (const peer of connected) {
           if (peer.bufferedAmount > 1024 * 1024) peer.close(1013, 'Connection too slow');
-          else if (peer.bufferedAmount < 128000) { const state = snapshot(room, peer.id); state.events = events; const payload = JSON.stringify({ type: 'state', state }); peer.send(peer.binaryState ? gzipSync(payload, { level: 3 }) : payload, { binary: Boolean(peer.binaryState), compress: !peer.binaryState }); }
+          else if (peer.bufferedAmount < 128000) {
+            const player = room.players.get(peer.id);
+            const context = player ? { marker: room.markers[player.infected ? 'infected' : 'survivor'], briefingUntil: player.briefingUntil, briefingDone: player.briefingDone } : { marker: null, briefingUntil: 0, briefingDone: true };
+            const markerSignature = JSON.stringify(context);
+            if (peer.markerSignature !== markerSignature) {
+              peer.markerSignature = markerSignature;
+              send(peer, { type: 'player-context', ...context });
+            }
+            peer.send(peer.binaryState ? compressedPayload : payload, { binary: Boolean(peer.binaryState), compress: false });
+          }
         }
       }
     }

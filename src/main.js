@@ -7,6 +7,7 @@ import { $, show, toast, renderRooms, updateHUD, drawMap } from './ui.js';
 
 const audio = new AudioEngine();
 let game, socket = null, state = null, selfId = null, joining = false, intentionalClose = false, lastCode = '', lastEvent = 0, latency = 0, voice = null;
+let playerContext = { marker: null, briefingUntil: 0, briefingDone: true };
 let mouse = { x: innerWidth / 2, y: innerHeight / 2 }, firing = false, firePointer = null, fireTouch = null, keys = new Set(), touchMove = { x: 0, y: 0 }, touchSprint = false, paused = false, pingTimer, frameCount = 0, frameTime = 0, lastFrame = performance.now(), lastRender = performance.now(), renderAccumulator = 0;
 let settings = { quality: 'medium', volume: 45, motion: false, name: '', qualityChosen: false };
 let pendingJoinCode = null, lowFpsNotified = false, micPending = false;
@@ -185,12 +186,13 @@ function join(code = '') {
       if (binary) ws.binaryState = true;
     } catch (error) { console.error('BLACKGRID state decode failed:', error); ws.close(4003, 'Invalid state'); return; }
       if (message.type === 'error') { clearTimeout(timeout); show('mission-loading', false); $('lobby-error').textContent = message.message; if (!$('connection-lost').classList.contains('hidden')) $('connection-message').textContent = message.message; setBusy(false); if (!welcomed) ws.close(); return; }
+    if (message.type === 'player-context') { playerContext = { marker: message.marker ?? null, briefingUntil: message.briefingUntil ?? 0, briefingDone: message.briefingDone ?? true }; if (state) state = { ...state, ...playerContext }; return; }
     if (message.type === 'chat') { appendChat(message.name, message.text); return; }
     if (message.type === 'signal') { voice?.signal(message.from, message.signal).catch(() => {}); return; }
     if (message.type === 'voice-ready') { voice?.ready(message.from, state?.players.find(player => player.id === message.from)?.name).catch(() => {}); return; }
     if (message.type === 'voice-left') { voice?.removePeer(message.from); if (voice?.active) $('voice-status').textContent = `VOICE CONNECTED · ${voice.peers.size} PEER${voice.peers.size === 1 ? '' : 'S'}`; return; }
     if (message.type === 'welcome') {
-      welcomed = true; clearTimeout(timeout); setBusy(false); show('mission-loading', false); selfId = message.id; lastCode = message.code; state = message.state; lastEvent = Math.max(0, ...state.events.map(e => e.id));
+      welcomed = true; clearTimeout(timeout); setBusy(false); show('mission-loading', false); selfId = message.id; lastCode = message.code; state = message.state; playerContext = { marker: state.marker ?? null, briefingUntil: state.briefingUntil ?? 0, briefingDone: state.briefingDone ?? true }; lastEvent = Math.max(0, ...state.events.map(e => e.id));
       for (const id of ['lobby', 'connection-lost', 'results', 'pause', 'settings', 'field-guide']) show(id, false);
       show('hud'); paused = false; briefingSignature = ''; document.body.classList.add('playing'); game.applyState(state, selfId); openMissionBriefing(state); microphoneState(false);
       updateHUD(state, state.players.find(p => p.id === selfId));
@@ -204,7 +206,7 @@ function join(code = '') {
     }
     if (message.type === 'pong') { latency = Math.round(performance.now() - message.at); $('ping').textContent = `${latency} ms`; return; }
     if (message.type === 'state' && selfId) {
-      state = message.state; game.applyState(state, selfId);
+      state = { ...message.state, ...playerContext }; game.applyState(state, selfId);
       if (!['active', 'hub'].includes(state.phase) && voice?.active) { send({ type: 'voice-left' }); voice.close(); microphoneState(false); $('voice-status').textContent = 'VOICE OFF'; }
       if (state.phase === 'hub') $('social-count').textContent = `${state.players.filter(player => !player.bot).length} HERE`;
       voice?.sync(state.players);
@@ -346,7 +348,7 @@ window.addEventListener('resize', () => {
     $('crosshair').style.left = `${mouse.x}px`; $('crosshair').style.top = `${mouse.y}px`;
   }
 });
-document.addEventListener('visibilitychange', () => { if (document.hidden) { clearInput(); audio.ctx?.suspend(); } else if (selfId) audio.start().catch(() => {}); });
+document.addEventListener('visibilitychange', () => { if (document.hidden) { clearInput(); audio.ctx?.suspend(); } else { const now = performance.now(); lastFrame = lastRender = now; renderAccumulator = 0; frameCount = frameTime = 0; if (selfId) audio.start().catch(() => {}); } });
 
 if (navigator.maxTouchPoints > 0 || matchMedia('(pointer: coarse)').matches) {
   document.body.classList.add('touch-device'); $('touch-controls').setAttribute('aria-hidden', 'false');
