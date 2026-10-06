@@ -11,10 +11,10 @@ function moveOutsideStation(body, dx, dz, radius = 0.55) {
 }
 const cleanInput = () => ({ x: 0, z: 0, yaw: 0, sprint: false, fire: false });
 export function createPlayer(id, name, bot = false) {
-  return { id, name, bot, x: (Math.random() - 0.5) * 7, z: 16 + Math.random() * 5, yaw: Math.PI, health: 100, stamina: 100, weapon: 'pistol', ammo: 12, reserve: 60, batteries: 0, medkits: 1, light: false, infected: false, infection: 0, dead: false, kills: 0, delivered: 0, vehicle: null, vehicleSeat: null, input: cleanInput(), lastInput: 0, fireAt: 0, reloadAt: 0, protection: 5, attackAt: 0, respawnAt: 0, moved: false };
+  return { id, name, bot, x: (Math.random() - 0.5) * 7, z: 16 + Math.random() * 5, yaw: Math.PI, health: 100, stamina: 100, weapon: 'pistol', ammo: 12, reserve: 60, batteries: 0, medkits: 1, light: false, infected: false, infection: 0, dead: false, kills: 0, delivered: 0, vehicle: null, vehicleSeat: null, input: cleanInput(), lastInput: 0, fireAt: 0, reloadAt: 0, protection: 5, attackAt: 0, respawnAt: 0, moved: false, briefingDone: true, briefingUntil: 0 };
 }
 export function createRoom(code, title, targetSize = 5, memory = {}, social = false) {
-  const room = { code, title, targetSize: clamp(targetSize, 1, MAX_PLAYERS), owner: null, stage: 0, phase: social ? 'hub' : 'active', social, power: 0, required: REQUIRED[0], time: 0, elapsed: 0, players: new Map(), zombies: [], pendingReinforcements: 0, cars: WORLD.cars.map(c => ({ ...c, driver: null, passengers: [], speed: 0, headlights: false })), supplies: social ? [] : WORLD.supplies.map(s => ({ ...s })), events: [], noises: [], blood: [], heat: new Float32Array(36), learning: { shots: clamp(Number(memory.shots) || 0, 0, 10000), lights: clamp(Number(memory.lights) || 0, 0, 10000), escapes: clamp(Number(memory.escapes) || 0, 0, 10000) }, adaptation: 0, totalKills: 0, waveAt: 110, eventId: 0, rng: randomSeed(721), created: Date.now(), lastActive: Date.now(), stageSince: 0 };
+  const room = { code, title, targetSize: clamp(targetSize, 1, MAX_PLAYERS), owner: null, stage: 0, briefingId: 1, phase: social ? 'hub' : 'active', social, power: 0, required: REQUIRED[0], botInstallAfter: 240 + Math.random() * 60, ammoDrops: [], markers: { survivor: null, infected: null }, time: 0, elapsed: 0, players: new Map(), zombies: [], pendingReinforcements: 0, cars: WORLD.cars.map(c => ({ ...c, driver: null, passengers: [], speed: 0, headlights: false })), supplies: social ? [] : WORLD.supplies.map(s => ({ ...s })), events: [], noises: [], blood: [], heat: new Float32Array(36), learning: { shots: clamp(Number(memory.shots) || 0, 0, 10000), lights: clamp(Number(memory.lights) || 0, 0, 10000), escapes: clamp(Number(memory.escapes) || 0, 0, 10000) }, adaptation: 0, totalKills: 0, waveAt: 110, eventId: 0, rng: randomSeed(721), created: Date.now(), lastActive: Date.now(), stageSince: 0 };
   if (!social) spawnWave(room, 12);
   return room;
 }
@@ -31,7 +31,7 @@ export function addHuman(room, id, name) {
     Object.assign(player, { x: bot.x, z: bot.z, health: bot.health, weapon: bot.weapon, ammo: bot.ammo, reserve: bot.reserve, batteries: bot.batteries, infection: bot.infection, infected: bot.infected, dead: bot.dead, respawnAt: bot.respawnAt });
     room.players.delete(bot.id);
   }
-  player.protection = room.time + 5;
+  player.protection = room.time + 5; player.briefingDone = room.social; player.briefingUntil = room.social ? room.time : room.time + 16;
   room.players.set(id, player);
   if (!room.owner) room.owner = id;
   if (!room.social) replenishBots(room);
@@ -59,6 +59,7 @@ export function replenishBots(room) {
   }
 }
 export function acceptInput(player, input, time) {
+  if (!player || (!player.briefingDone && time < player.briefingUntil)) return;
   if (!input || typeof input !== 'object') return;
   player.input = { x: Number.isFinite(input.x) ? clamp(input.x, -1, 1) : 0, z: Number.isFinite(input.z) ? clamp(input.z, -1, 1) : 0, yaw: Number.isFinite(input.yaw) ? input.yaw % (Math.PI * 2) : player.yaw, sprint: input.sprint === true, fire: input.fire === true };
   player.lastInput = time;
@@ -69,6 +70,10 @@ function dropCells(room, p) {
 }
 export function action(room, p, kind, yaw) {
   if (!p || room.phase !== 'active' || p.dead) return;
+  if (!p.briefingDone && room.time < p.briefingUntil && kind !== 'briefing-done') return;
+  if (kind === 'briefing-done') { p.briefingDone = true; p.briefingUntil = room.time; return; }
+  if (kind === 'map-mark') { if (!yaw || !Number.isFinite(yaw.x) || !Number.isFinite(yaw.z)) return; const team = p.infected ? 'infected' : 'survivor'; room.markers[team] = { x: clamp(yaw.x, -87, 87), z: clamp(yaw.z, -87, 87), owner: p.id, name: p.name }; emit(room, 'mark', { team }); return; }
+  if (kind === 'map-unmark') { const team = p.infected ? 'infected' : 'survivor'; if (room.markers[team]?.owner === p.id) room.markers[team] = null; return; }
   if (kind === 'fire') { if (Number.isFinite(yaw)) p.yaw = yaw % (Math.PI * 2); shoot(room, p); return; }
   if (kind === 'light' && !p.infected) { p.light = !p.light; return; }
   if (kind === 'reload' && !p.infected && !p.reloadAt && p.ammo < WEAPONS[p.weapon].magazine && p.reserve > 0) { p.reloadAt = room.time + WEAPONS[p.weapon].reload; return; }
@@ -92,9 +97,10 @@ export function action(room, p, kind, yaw) {
     else { p.weapon = s.type; p.ammo = WEAPONS[s.type].magazine; p.reserve = Math.min(240, p.reserve + 36); p.reloadAt = 0; }
     emit(room, 'pickup', { player: p.id, item: s.type, x: s.x, z: s.z });
   }
+  if (interaction.kind === 'ammo-drop') { if (p.infected) return; const drop = room.ammoDrops.find(d => d.id === interaction.id && d.active); if (!drop) return; drop.active = false; p.reserve = Math.min(240, p.reserve + 48); p.ammo = Math.min(WEAPONS[p.weapon].magazine, p.ammo + 6); emit(room, 'ammo', { player: p.id, text: 'DRONE AMMUNITION RECOVERED.' }); return; }
   if (interaction.kind === 'deliver') {
     const amount = Math.min(p.batteries, room.required - room.power);
-    room.power += amount; p.batteries -= amount; p.delivered += amount;
+    room.power += amount; p.batteries -= amount; p.delivered += amount; room.botInstallAfter = room.time + 240 + Math.random() * 60;
     emit(room, 'power', { text: `${p.name} installed ${amount} power cell${amount > 1 ? 's' : ''}.`, x: 0, z: 0 });
     room.noises.push({ x: 0, z: 0, radius: 90, until: room.time + 12 });
     if (room.power >= room.required) { emit(room, 'objective', { text: 'GRID ONLINE. Reach the south evacuation zone.' }); spawnWave(room, 4 + room.stage * 2); }
@@ -112,12 +118,14 @@ export function advance(room, p) {
   if (room.phase !== 'active' || room.power < room.required || p.infected || p.dead || distance(p, EXTRACTION) >= 8) return;
   room.learning.escapes = Math.min(10000, room.learning.escapes + 1);
   if (room.stage === 2) { room.phase = 'won'; emit(room, 'victory', { text: 'SIGNAL RESTORED. Your crew made it through the blackout.' }); return; }
-  room.stage++;
+  room.stage++; room.briefingId++;
   room.required = REQUIRED[room.stage]; room.power = 0; room.stageSince = room.time;
   room.supplies = WORLD.supplies.map(s => ({ ...s }));
   room.cars = WORLD.cars.map(c => ({ ...c, driver: null, passengers: [], speed: 0, headlights: false }));
   room.zombies = []; room.noises = []; room.blood = [];
-  for (const player of room.players.values()) { player.vehicle = null; player.vehicleSeat = null; player.batteries = 0; player.x = (room.rng() - 0.5) * 9; player.z = player.infected ? -75 : 16 + room.rng() * 5; player.protection = room.time + 12; player.path = null; }
+  room.ammoDrops = []; room.markers = { survivor: null, infected: null };
+  for (const player of room.players.values()) { player.briefingDone = false; player.briefingUntil = room.time + 16; player.vehicle = null; player.vehicleSeat = null; player.batteries = 0; player.x = (room.rng() - 0.5) * 9; player.z = player.infected ? -75 : 16 + room.rng() * 5; player.protection = room.time + 12; player.path = null; }
+  room.botInstallAfter = room.time + 240 + Math.random() * 60;
   room.waveAt = room.time + 110;
   spawnWave(room, 12 + room.stage * 4);
   emit(room, 'stage', { text: `OPERATION ${room.stage + 1}: ${STAGES[room.stage]}. Restore the next district.` });
@@ -186,7 +194,7 @@ function shoot(room, p) {
         p.kills++; room.totalKills++;
         if ('infected' in nearest) { nearest.health = 0; nearest.dead = true; nearest.respawnAt = room.time + 8; }
         else room.pendingReinforcements++;
-        emit(room, 'kill', { x: nearest.x, z: nearest.z, player: p.id });
+        emit(room, 'kill', { x: nearest.x, z: nearest.z, player: p.id }); if (!('infected' in nearest)) { room.ammoDrops.push({ id: `drone-${++room.eventId}`, x: nearest.x, z: nearest.z, active: true, createdAt: room.time, expiresAt: room.time + 90 }); room.ammoDrops = room.ammoDrops.filter(d => d.active && d.expiresAt > room.time).slice(-20); }
       }
     }
   }
@@ -227,7 +235,7 @@ function botThink(room, p, dt) {
     navigate(p, target, dt, p.batteries ? 3.1 : 3.8, moveBody, room.time);
     p.moved = distance(before, p) > 0.01;
     if (enemy) p.yaw = yaw;
-    if (distance(p, target) < 2.5 && target !== EXTRACTION) action(room, p, 'interact');
+    if (distance(p, target) < 2.5 && target !== EXTRACTION && (target !== STATION || room.time >= room.botInstallAfter)) action(room, p, 'interact');
   }
 }
 function zombieThink(room, z, dt) {
@@ -298,6 +306,7 @@ export function tick(room, dt) {
   if (room.phase !== 'active') return;
   room.time += dt; room.elapsed += dt;
   room.noises = room.noises.filter(n => n.until > room.time).slice(-50);
+  room.ammoDrops = room.ammoDrops.filter(d => d.active && d.expiresAt > room.time).slice(-20);
   room.blood = room.blood.filter(b => b.until > room.time).slice(-50);
   const level = Math.min(3, Math.floor((room.learning.shots * 0.08 + room.learning.lights * 0.015 + room.elapsed * 0.04 + room.learning.escapes * 8) / 14));
   if (level > room.adaptation) { room.adaptation = level; emit(room, 'evolution', { text: ['','INFECTED ADAPTING: investigating familiar routes.','INFECTED ADAPTING: coordinated flanking observed.','INFECTED ADAPTING: longer pursuit memory.'][level] }); }
@@ -320,7 +329,7 @@ export function tick(room, dt) {
           moveBody(car, Math.sin(car.yaw) * car.speed * dt, Math.cos(car.yaw) * car.speed * dt, 1.4);
           if (distance(before, car) < car.speed * dt * 0.3) car.speed *= 0.6;
           p.x = car.x; p.z = car.z; p.yaw = car.yaw; p.moved = car.speed > 1;
-          if (car.speed > 5) for (const z of room.zombies) if (z.health > 0 && distance(car, z) < 2.5) { z.health = 0; p.kills++; room.totalKills++; room.pendingReinforcements++; emit(room, 'kill', { x: z.x, z: z.z, player: p.id }); }
+          if (car.speed > 5) for (const z of room.zombies) if (z.health > 0 && distance(car, z) < 2.5) { z.health = 0; p.kills++; room.totalKills++; room.pendingReinforcements++; emit(room, 'kill', { x: z.x, z: z.z, player: p.id }); room.ammoDrops.push({ id: `drone-${++room.eventId}`, x: z.x, z: z.z, active: true, expiresAt: room.time + 90 }); }
         }
       } else if (length > 0.01) {
         const sprint = p.input.sprint && p.stamina > 3 && !p.infected;
@@ -349,10 +358,10 @@ export function tick(room, dt) {
   if (room.players.size && ![...room.players.values()].some(p => !p.infected && !p.dead)) { room.phase = 'lost'; emit(room, 'defeat', { text: 'THE SIGNAL WENT DARK. No survivors remain.' }); }
 }
 const round = n => Math.round(n * 100) / 100;
-export function snapshot(room) {
+export function snapshot(room, viewerId) { const viewer = room.players.get(viewerId); const team = viewer?.infected ? 'infected' : 'survivor';
   return { code: room.code, title: room.title, owner: room.owner, stage: room.stage, phase: room.phase, power: room.power, required: room.required, time: round(room.time), adaptation: room.adaptation, totalKills: room.totalKills,
     players: [...room.players.values()].map(p => ({ id: p.id, name: p.name, bot: p.bot, x: round(p.x), z: round(p.z), yaw: round(p.yaw), health: round(p.health), stamina: round(p.stamina), weapon: p.weapon, ammo: p.ammo, reserve: p.reserve, batteries: p.batteries, medkits: p.medkits, light: p.light, infected: p.infected, infection: round(p.infection), dead: p.dead, kills: p.kills, delivered: p.delivered, vehicle: p.vehicle, vehicleSeat: p.vehicleSeat, reloadAt: p.reloadAt, moved: p.moved, respawnAt: p.respawnAt })),
     zombies: room.zombies.map(z => ({ id: z.id, x: round(z.x), z: round(z.z), yaw: round(z.yaw), health: z.health, variant: z.variant, alert: z.alert })),
     cars: room.cars.map(c => ({ id: c.id, x: round(c.x), z: round(c.z), yaw: round(c.yaw), color: c.color, driver: c.driver, passengers: c.passengers || [], speed: round(c.speed), headlights: c.headlights })),
-    supplies: room.supplies.filter(s => s.active).map(s => ({ ...s })), events: room.events.slice(-30) };
+    supplies: room.supplies.filter(s => s.active).map(s => ({ ...s })), ammoDrops: room.ammoDrops.filter(d => d.active).map(d => ({ ...d })), marker: room.markers[team], briefingId: room.briefingId, briefingUntil: viewer?.briefingUntil ?? 0, briefingDone: viewer?.briefingDone ?? true, events: room.events.slice(-30) };
 }

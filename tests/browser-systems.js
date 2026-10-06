@@ -12,9 +12,11 @@ page.on('pageerror', e => errors.push(e.message));
 const waitFor = async predicate => { const until = Date.now() + 5000; while (!predicate()) { if (Date.now() > until) throw new Error('Fixture assertion timed out'); await new Promise(r => setTimeout(r, 50)); } };
 try {
   await page.goto(`http://127.0.0.1:${port}`, { waitUntil: 'networkidle' });
+  if (await page.locator('#how-to-play').isVisible()) { await page.locator('#how-understood').check(); await page.locator('#how-continue').click(); await page.locator('#how-to-play').waitFor({ state: 'hidden' }); }
   await page.locator('#callsign').fill('SYSTEM TESTER');
   await page.locator('#crew-size').selectOption('1'); await page.locator('#deploy').click();
   await page.locator('#hud').waitFor({ state: 'visible' });
+  await page.locator('#mission-briefing').waitFor({ state: 'visible' }); await page.locator('#briefing-proceed').click(); await page.locator('#mission-briefing').waitFor({ state: 'hidden' });
   const info = await page.evaluate(() => window.__BLACKGRID__.diagnostics);
   let room = app.rooms.get(info.room), p = room.players.get(info.player);
   room.zombies = [];
@@ -38,6 +40,7 @@ try {
     }
     p.x = 0; p.z = 76; await page.waitForTimeout(180); await page.keyboard.press('KeyE');
     await waitFor(() => stage === 2 ? room.phase === 'won' : room.stage === stage + 1);
+    if (stage < 2) { await page.locator('#mission-briefing').waitFor({ state: 'visible' }); await page.locator('#briefing-proceed').click(); await page.locator('#mission-briefing').waitFor({ state: 'hidden' }); }
   }
   await page.locator('#afterlight').waitFor({ state: 'visible' });
   assert.equal((await page.evaluate(() => window.__BLACKGRID__.diagnostics)).phase, 'hub');
@@ -49,6 +52,7 @@ try {
   await page.locator('#leave-afterlight').click(); await page.locator('#lobby').waitFor({ state: 'visible' });
   await page.locator('#callsign').fill('SYSTEM TESTER TWO');
   await page.locator('#deploy').click(); await page.locator('#hud').waitFor({ state: 'visible' });
+  await page.locator('#mission-briefing').waitFor({ state: 'visible' }); await page.locator('#briefing-proceed').click(); await page.locator('#mission-briefing').waitFor({ state: 'hidden' });
   const defeatInfo = await page.evaluate(() => window.__BLACKGRID__.diagnostics);
   room = app.rooms.get(defeatInfo.room); p = room.players.get(defeatInfo.player); room.zombies = [];
   p.infection = 0.2;
@@ -57,6 +61,7 @@ try {
   assert.match(await page.locator('#result-title').textContent(), /dark took/);
   await page.locator('#restart').click(); await waitFor(() => app.rooms.get(defeatInfo.room) !== room);
   await page.locator('#results').waitFor({ state: 'hidden' });
+  await page.locator('#mission-briefing').waitFor({ state: 'visible' }); await page.locator('#briefing-proceed').click(); await page.locator('#mission-briefing').waitFor({ state: 'hidden' });
   const beforeMemory = await page.evaluate(() => window.__BLACKGRID__.diagnostics);
   await page.keyboard.press('Escape'); await page.locator('#ingame-settings').click();
   await page.locator('#quality').selectOption('low'); await page.locator('#settings-close').click();

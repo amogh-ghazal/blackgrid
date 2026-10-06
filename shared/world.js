@@ -6,7 +6,7 @@ export const STATION = { x: 0, z: 0 };
 export const SAFE_ZONE_RADIUS = 17;
 export const EXTRACTION = { x: 0, z: 76 };
 export const STAGES = ['COLD START', 'THE RELAY', 'LAST LIGHT'];
-export const REQUIRED = [2, 2, 3];
+export const REQUIRED = [3, 3, 3];
 export const WEAPONS = {
   pistol: { name: 'P12 SIDEARM', damage: 38, range: 38, interval: 0.32, magazine: 12, reload: 1.25, spread: 0.015 },
   rifle: { name: 'AR-4 CARBINE', damage: 30, range: 56, interval: 0.13, magazine: 30, reload: 1.65, spread: 0.024 },
@@ -101,7 +101,9 @@ export function isIlluminated(room, p) {
 export function nearestInteraction(player, state) {
   if (player.infected || player.dead || state.phase !== 'active') return null;
   if (player.vehicle) return { kind: 'exit', label: 'Exit vehicle' };
-  if (distance(player, STATION) < 7 && player.batteries > 0 && state.power < state.required) return { kind: 'deliver', label: `Install ${player.batteries} power cell${player.batteries > 1 ? 's' : ''}` };
+  const ammoDrop = state.ammoDrops?.find(drop => drop.active && distance(drop, player) < 2.8);
+  if (ammoDrop && !player.infected) return { kind: 'ammo-drop', id: ammoDrop.id, label: 'Collect drone ammo' };
+  if (distance(player, STATION) < 7 && player.batteries > 0 && state.power < state.required) return { kind: 'deliver', label: `Press E to install ${player.batteries} power cell${player.batteries > 1 ? 's' : ''}` };
   if (state.power >= state.required && distance(player, EXTRACTION) < 8) return { kind: 'extract', label: state.stage < 2 ? 'Deploy to next operation' : 'Evacuate the city' };
   const supply = state.supplies.filter(s => s.active && (s.type !== 'battery' || player.batteries < 2)).sort((a, b) => distance(a, player) - distance(b, player))[0];
   if (supply && distance(supply, player) < 2.8) return { kind: 'pickup', id: supply.id, label: `Collect ${supply.type === 'battery' ? 'power cell' : supply.type}` };

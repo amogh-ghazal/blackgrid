@@ -225,6 +225,17 @@ export class GameScene {
     this.extractionBeacon = this.beacon(EXTRACTION.x, EXTRACTION.z, 0xaed7ae, 22); this.extractionBeacon.visible = false; this.scene.add(this.extractionBeacon);
     const evacRing = new THREE.Mesh(new THREE.RingGeometry(6, 6.2, 64), new THREE.MeshBasicMaterial({ color: 0x86a582, transparent: true, opacity: 0.5, side: THREE.DoubleSide })); evacRing.rotation.x = -Math.PI / 2; evacRing.position.set(0, 0.1, 76); this.scene.add(evacRing);
     batch(group);
+    this.powerBoard = new THREE.Group(); this.powerBoard.position.set(0, 7.2, -4);
+    box(this.powerBoard, 0, 0, 0, 5.2, 1.35, 0.16, material(0x303a34, 0.6, 0.35));
+    const canvas = document.createElement('canvas'); canvas.width = 512; canvas.height = 128; this.powerBoardCanvas = canvas; this.powerBoardContext = canvas.getContext('2d');
+    const texture = new THREE.CanvasTexture(canvas); texture.colorSpace = THREE.SRGBColorSpace;
+    const panel = new THREE.Mesh(new THREE.PlaneGeometry(4.9, 1.1), new THREE.MeshBasicMaterial({ map: texture })); panel.position.z = 0.095; this.powerBoard.add(panel); this.scene.add(this.powerBoard); this.paintPowerBoard(0, 3);
+  }
+  paintPowerBoard(power, required) {
+    const ctx = this.powerBoardContext; if (!ctx) return;
+    ctx.fillStyle = '#17211d'; ctx.fillRect(0, 0, 512, 128); ctx.strokeStyle = '#b8ad8a'; ctx.lineWidth = 4; ctx.strokeRect(7, 7, 498, 114);
+    ctx.fillStyle = '#e5dbc1'; ctx.font = 'bold 38px monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('POWER CELLS ' + power + '/' + required, 256, 64);
+    this.powerBoard.children[1].material.map.needsUpdate = true;
   }
   beacon(x, z, color, height) {
     const group = new THREE.Group(); group.position.set(x, 0, z);
@@ -315,15 +326,21 @@ export class GameScene {
   addPickup(data) {
     const group = new THREE.Group(); group.position.set(data.x, 0, data.z);
     const color = data.type === 'battery' ? C.amber : data.type === 'medkit' ? 0x9fc7ad : C.cyan;
-    const body = new THREE.Group(); body.position.y = 0.65; group.add(body);
-    if (data.type === 'battery') {
+    const body = new THREE.Group(); body.position.y = 0.65; group.add(body); let droneRotors = [];
+    if (data.type === 'drone-ammo') {
+      const drone = new THREE.Group(); drone.position.y = 1.35; body.add(drone);
+      box(drone, 0, 0, 0, 0.58, 0.2, 0.42, material(0x35433d, 0.45, 0.4)); box(drone, 0, -0.12, 0.12, 0.25, 0.14, 0.22, emissive(0xc1ae82, 0.7));
+      const rotors = droneRotors; for (const [x, z] of [[-0.62,-0.5],[0.62,-0.5],[-0.62,0.5],[0.62,0.5]]) { box(drone, x / 2, 0.05, z / 2, 0.9, 0.06, 0.07, material(0x4f5b51)); const rotor = box(drone, x, 0.11, z, 0.42, 0.035, 0.09, material(0x95917b)); rotors.push(rotor); cylinder(drone, x, 0.04, z, 0.12, 0.12, emissive(0xb99d67, 0.65)); }
+      const beam = new THREE.Mesh(new THREE.ConeGeometry(2.4, 8, 20, 1, true), new THREE.MeshBasicMaterial({ color: 0xd7d0ae, transparent: true, opacity: 0.12, side: THREE.DoubleSide, depthWrite: false })); beam.rotation.x = Math.PI; beam.position.y = -3.9; drone.add(beam);
+      const beacon = this.beacon(0, 0, 0xc7b88e, 5); beacon.children[0].material.opacity = 0.09; beacon.children[1].scale.setScalar(0.3); beacon.children[1].position.y = 0; group.add(beacon);
+    } else if (data.type === 'battery') {
       box(body, 0, 0, 0, 0.5, 0.75, 0.32, material(0x86785b, 0.4, 0.6)); box(body, 0, 0, 0.18, 0.22, 0.47, 0.03, emissive(color, 1.3)); box(body, 0, 0.44, 0, 0.24, 0.12, 0.18, material(0x9fa490));
       const beacon = this.beacon(0, 0, color, 6); beacon.children[1].position.y = 2.4; beacon.children[1].scale.setScalar(0.5); group.add(beacon);
     } else if (data.type === 'medkit') { box(body, 0, 0, 0, 0.55, 0.35, 0.45, material(0x98a78a)); box(body, 0, 0.2, 0, 0.3, 0.03, 0.1, emissive(color, 0.5)); box(body, 0, 0.2, 0, 0.1, 0.03, 0.3, emissive(color, 0.5)); }
     else if (data.type === 'ammo') { box(body, 0, 0, 0, 0.65, 0.38, 0.4, material(0x63785b)); box(body, 0, 0.22, 0, 0.4, 0.06, 0.25, emissive(color, 0.4)); }
     else { box(body, 0, 0, 0, 0.17, 0.2, 1.1, material(0x53625c)); box(body, 0, -0.18, 0, 0.14, 0.3, 0.2, material(0x53625c)); box(body, 0, 0.14, 0.2, 0.07, 0.04, 0.4, emissive(color, 0.8)); body.rotation.z = Math.PI / 3; }
     const ring = new THREE.Mesh(new THREE.RingGeometry(0.65, 0.72, 24), new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.45, side: THREE.DoubleSide })); ring.rotation.x = -Math.PI / 2; ring.position.y = 0.05; group.add(ring);
-    group.userData = { body, data }; this.scene.add(group); this.pickups.set(data.id, group);
+    group.userData = { body, data, rotors: droneRotors }; this.scene.add(group); this.pickups.set(data.id, group);
   }
   applyState(state, id) {
     this.state = state; this.self = id; this.playing = true;
@@ -339,9 +356,11 @@ export class GameScene {
     }
     for (const [key, actor] of this.actors) if (!actorIds.has(key)) { disposeGroup(actor); this.actors.delete(key); }
     for (const car of state.cars) { const actor = this.vehicles.get(car.id); if (actor) actor.userData.data = car; }
-    const supplyIds = new Set(state.supplies.map(s => s.id));
+    if (this.boardPower !== state.power || this.boardRequired !== state.required) { this.paintPowerBoard(state.power, state.required); this.boardPower = state.power; this.boardRequired = state.required; } this.powerBoard.position.y = 7.2 + Math.sin(this.clock * 1.1) * 0.12;
+    const supplyState = [...state.supplies, ...(state.ammoDrops || []).map(drop => ({ ...drop, type: 'drone-ammo' }))];
+    const supplyIds = new Set(supplyState.map(s => s.id));
     for (const [key, item] of this.pickups) if (!supplyIds.has(key)) { disposeGroup(item); this.pickups.delete(key); }
-    for (const s of state.supplies) if (!this.pickups.has(s.id)) this.addPickup(s);
+    for (const s of supplyState) if (!this.pickups.has(s.id)) this.addPickup(s);
     if (this.lastPower !== state.power || this.lastStage !== state.stage) {
       const powered = state.power >= state.required;
       this.stationLight.intensity = state.power ? 32 + state.power * 8 : 6;
@@ -467,7 +486,7 @@ export class GameScene {
       this.camera.position.set(32 + Math.sin(t) * 7, 24, 41 + Math.cos(t) * 5); this.camera.lookAt(-3, 1.5, -12);
       this.flashlight.intensity = 0;
     }
-    for (const item of this.pickups.values()) { item.userData.body.position.y = 0.67 + Math.sin(this.clock * 2 + item.position.x) * 0.12; item.userData.body.rotation.y += dt * 0.45; }
+    for (const item of this.pickups.values()) { const drone = item.userData.data.type === 'drone-ammo'; const descent = drone ? Math.max(0, 1 - ((this.state?.time || 0) - (item.userData.data.createdAt || 0)) / 1.6) * 3 : 0; item.userData.body.position.y = (drone ? 0.85 + descent : 0.67) + Math.sin(this.clock * (drone ? 1.2 : 2) + item.position.x) * (drone ? 0.25 : 0.12); item.userData.body.rotation.y += dt * (drone ? 0.18 : 0.45); for (const rotor of item.userData.rotors || []) rotor.rotation.y += dt * 24; }
     this.stationBeacon.children[1].rotation.y += dt; this.extractionBeacon.children[1].rotation.y += dt;
     this.stationRing.material.opacity = 0.4 + Math.sin(this.clock * 2) * 0.13;
     this.shake *= Math.exp(-dt * 14); this.muzzleLight.intensity *= Math.exp(-dt * 40);

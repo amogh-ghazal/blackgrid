@@ -1,18 +1,51 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createRoom, addHuman, removeHuman, acceptInput, tick, action, isIlluminated, advance, snapshot } from '../server/simulation.js';
-import { WORLD, STATION, SAFE_ZONE_RADIUS, blocked, clearLine, moveBody, distance, MAX_PLAYERS } from '../shared/world.js';
+import { WORLD, STATION, SAFE_ZONE_RADIUS, blocked, clearLine, moveBody, distance, nearestInteraction, MAX_PLAYERS } from '../shared/world.js';
 import { route } from '../server/navigation.js';
 
 function setup(size = 1) {
   const room = createRoom('TEST01', 'Test operation', size);
   const p = addHuman(room, 'human', 'Tester');
   room.zombies = [];
+  action(room, p, 'briefing-done');
   return { room, p };
 }
 test('world objectives and supplies are reachable, not inside buildings', () => {
   for (const s of WORLD.supplies) assert.equal(blocked(s.x, s.z), false, s.id);
   for (const c of WORLD.cars) assert.equal(blocked(c.x, c.z, 1.4), false, c.id);
+});
+test('operation briefing blocks player movement and actions until proceeded', () => {
+  const { room, p } = setup();
+  p.briefingDone = false; p.briefingUntil = room.time + 8;
+  p.ammo = 12;
+  acceptInput(p, { x: 1, z: 0, yaw: 1 }, room.time);
+  action(room, p, 'fire', 1);
+  assert.equal(p.input.x, 0); assert.equal(p.ammo, 12);
+  action(room, p, 'briefing-done');
+  acceptInput(p, { x: 1, z: 0, yaw: 1 }, room.time);
+  assert.equal(p.input.x, 1); assert.equal(p.briefingDone, true);
+});
+test('map markers are shared only with the viewer’s team', () => {
+  const { room, p } = setup(2);
+  const bot = [...room.players.values()].find(player => player.bot);
+  action(room, p, 'map-mark', { x: 22, z: -18 });
+  bot.infected = true;
+  action(room, bot, 'map-mark', { x: -14, z: 34 });
+  assert.deepEqual(snapshot(room, p.id).marker, { x: 22, z: -18, owner: p.id, name: p.name });
+  assert.deepEqual(snapshot(room, bot.id).marker, { x: -14, z: 34, owner: bot.id, name: bot.name });
+});
+test('survivors collect ammo from drone drops while infected players cannot', () => {
+  const { room, p } = setup(2);
+  const bot = [...room.players.values()].find(player => player.bot);
+  room.ammoDrops.push({ id: 'drone-test', x: p.x, z: p.z, active: true, expiresAt: 60 });
+  assert.equal(nearestInteraction(p, room)?.kind, 'ammo-drop');
+  bot.infected = true; bot.x = p.x; bot.z = p.z;
+  action(room, bot, 'interact');
+  assert.equal(room.ammoDrops[0].active, true);
+  p.ammo = 0; p.reserve = 0;
+  action(room, p, 'interact');
+  assert.equal(room.ammoDrops[0].active, false); assert.equal(p.ammo, 6); assert.equal(p.reserve, 48);
 });
 test('movement is server bounded and nonfinite input cannot poison the simulation', () => {
   const { room, p } = setup();
@@ -82,6 +115,7 @@ test('crew fills vacancies and human joins replace bots without exceeding fiftee
 test('cars support passengers and automatically promote a passenger when the driver exits', () => {
   const { room, p } = setup(2);
   const passenger = addHuman(room, 'passenger', 'Passenger');
+  action(room, passenger, 'briefing-done');
   const car = room.cars[0]; p.x = car.x; p.z = car.z;
   action(room, p, 'interact');
   assert.equal(p.vehicle, car.id); assert.equal(car.driver, p.id);
@@ -94,6 +128,7 @@ test('cars support passengers and automatically promote a passenger when the dri
 test('a passenger can fire from a moving vehicle while moving occupants are protected from zombie bites', () => {
   const { room, p } = setup(2);
   const passenger = addHuman(room, 'passenger', 'Passenger');
+  action(room, passenger, 'briefing-done');
   const car = room.cars[0]; p.x = car.x; p.z = car.z; action(room, p, 'interact');
   passenger.x = car.x; passenger.z = car.z; action(room, passenger, 'interact');
   car.speed = 10;

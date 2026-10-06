@@ -13,6 +13,7 @@ page.on('console', message => { if (message.type() === 'error') errors.push(mess
 try {
   await page.goto(url, { waitUntil: 'networkidle', timeout: 60000 });
   await page.locator('#lobby').waitFor({ state: 'visible', timeout: 30000 });
+  if (await page.locator('#how-to-play').isVisible()) { await page.locator('#how-understood').check(); await page.locator('#how-continue').click(); await page.locator('#how-to-play').waitFor({ state: 'hidden' }); }
   assert.equal(await page.locator('.legal-nav a[href="/privacy.html"]').count(), 1);
   assert.equal(await page.locator('.legal-nav a[href="/terms.html"]').count(), 1);
   const legalPage = await context.newPage();
@@ -32,6 +33,7 @@ try {
   await page.locator('#crew-size').selectOption('5');
   await page.locator('#deploy').click();
   await page.locator('#hud').waitFor({ state: 'visible', timeout: 15000 });
+  await page.locator('#mission-briefing').waitFor({ state: 'visible' }); await page.locator('#briefing-proceed').click();
   await page.waitForFunction(() => window.__BLACKGRID__.diagnostics.networkCodec === 'gzip', undefined, { timeout: 15000 });
   await page.waitForTimeout(3000);
   const initial = await page.evaluate(() => window.__BLACKGRID__.diagnostics);
@@ -39,6 +41,7 @@ try {
   await page.mouse.move(1080, 450); await page.waitForTimeout(200);
   const beforeMove = await page.evaluate(() => window.__BLACKGRID__.diagnostics);
   await page.keyboard.down('KeyW'); await page.waitForTimeout(900); await page.keyboard.up('KeyW');
+  await page.waitForTimeout(250); // Allow one network snapshot to include the release input.
   const afterMove = await page.evaluate(() => window.__BLACKGRID__.diagnostics);
   assert.ok(afterMove.x > beforeMove.x + 0.5, `W should move toward the cursor on the right: ${beforeMove.x} -> ${afterMove.x}`);
   await page.waitForTimeout(700);
@@ -65,6 +68,7 @@ try {
   await second.locator('#callsign').fill('TEAMMATE');
   await second.locator('#join-form button').click();
   await second.locator('#hud').waitFor({ state: 'visible', timeout: 15000 });
+  if (await second.locator('#mission-briefing').isVisible()) await second.locator('#briefing-proceed').click();
   await page.waitForTimeout(700);
   assert.equal((await page.evaluate(() => window.__BLACKGRID__.diagnostics)).humans, 2);
   assert.equal((await second.evaluate(() => window.__BLACKGRID__.diagnostics)).room, initial.room);
@@ -74,6 +78,7 @@ try {
   mobile.on('pageerror', error => errors.push(error.message));
   mobile.on('console', message => { if (message.type() === 'error') errors.push(message.text()); });
   await mobile.goto(`${url}/?room=${initial.room}`, { waitUntil: 'networkidle' });
+  if (await mobile.locator('#how-to-play').isVisible()) { await mobile.locator('#how-understood').check(); await mobile.locator('#how-continue').tap(); await mobile.locator('#how-to-play').waitFor({ state: 'hidden' }); }
   const mobileViewport = await mobile.locator('meta[name="viewport"]').getAttribute('content');
   assert.match(mobileViewport, /user-scalable=no/, 'Phone browser zoom should be disabled');
   await mobile.locator('#callsign').fill('MOBILE');
@@ -82,6 +87,7 @@ try {
   await mobile.setViewportSize({ width: 844, height: 390 });
   await mobile.locator('#orientation-gate').waitFor({ state: 'hidden' });
   await mobile.locator('#hud').waitFor({ state: 'visible', timeout: 15000 });
+  if (await mobile.locator('#mission-briefing').isVisible()) await mobile.locator('#briefing-proceed').tap();
   assert.equal((await mobile.evaluate(() => window.__BLACKGRID__.diagnostics)).quality, 'high', 'Phones should start in high detail');
   await mobile.locator('#pause-open').tap(); await mobile.locator('#ingame-settings').tap();
   assert.equal(await mobile.locator('#graphics-setting').evaluate(el => getComputedStyle(el).display), 'none', 'Mobile users should not see desktop graphics presets');

@@ -3,7 +3,7 @@ import './theme.css';
 import { GameScene } from './scene.js';
 import { AudioEngine } from './audio.js';
 import { VoiceRoom } from './voice.js';
-import { $, show, toast, renderRooms, updateHUD } from './ui.js';
+import { $, show, toast, renderRooms, updateHUD, drawMap } from './ui.js';
 
 const audio = new AudioEngine();
 let game, socket = null, state = null, selfId = null, joining = false, intentionalClose = false, lastCode = '', lastEvent = 0, latency = 0, voice = null;
@@ -45,6 +45,7 @@ async function initializeAuth() {
   try {
     const response = await fetch('/api/auth/session', { cache: 'no-store' }); const result = await response.json();
     authRequired = result.required === true; account = result.user || null; loginOriginUnsupported = authRequired && !isSupportedLoginOrigin(); renderAccount();
+    if (!account && !localStorage.getItem('blackgrid-how-to-play-v1')) show('how-to-play');
     if (loginOriginUnsupported) { const link = document.createElement('a'); link.href = CANONICAL_GAME_ORIGIN + location.search; link.textContent = 'Open the secure BLACKGRID link'; link.rel = 'noopener'; $('auth-status').replaceChildren(document.createTextNode('Google sign-in is only enabled on the secure game address. '), link); return; }
     if (!account && authRequired) {
       const script = document.createElement('script'); script.src = 'https://accounts.google.com/gsi/client'; script.async = true; script.defer = true;
@@ -78,12 +79,13 @@ function movementInput() {
 function clearInput() { keys.clear(); firing = false; firePointer = null; fireTouch = null; lookTouch = null; moveTouch = null; touchMove.x = 0; touchMove.y = 0; touchSprint = false; if (typeof movePointer !== 'undefined' && movePointer !== null) { if (moveStick.hasPointerCapture(movePointer)) moveStick.releasePointerCapture(movePointer); movePointer = null; moveKnob.style.transform = 'translate(0, 0)'; } if (typeof lookPointer !== 'undefined' && lookPointer !== null) { if (lookPad.hasPointerCapture(lookPointer)) lookPad.releasePointerCapture(lookPointer); lookPointer = null; } if (socket?.readyState === WebSocket.OPEN && selfId) send(movementInput()); }
 function setBusy(value) { joining = value; $('deploy').disabled = value; $('join-form').querySelector('button').disabled = value; $('deploy').textContent = value ? 'ESTABLISHING CONNECTION' : 'START AN OPERATION'; }
 function setPause(value) { paused = value; show('pause', value); if (value) clearInput(); }
-const modalOpen = () => paused || ['settings', 'field-guide', 'results', 'connection-lost', 'afterlight'].some(id => !$(id).classList.contains('hidden'));
+const modalOpen = () => paused || ['settings', 'field-guide', 'results', 'connection-lost', 'afterlight', 'mission-briefing', 'how-to-play'].some(id => !$(id).classList.contains('hidden'));
 function updateViewToggle(mode = game.viewMode) {
   $('view-toggle').textContent = `VIEW: ${mode === 'first' ? 'FIRST' : 'THIRD PERSON'} · V`;
   $('view-toggle').setAttribute('aria-label', `Switch to ${mode === 'first' ? 'third person' : 'first person'} view`);
 }
 function toggleView() { updateViewToggle(game.setView(game.viewMode === 'first' ? 'third' : 'first')); }
+function toggleMap() { const visible = $('map-overlay').classList.contains('hidden'); show('map-overlay', visible); const me = state?.players.find(player => player.id === selfId); if (visible && state && me) drawMap($('large-map'), state, me); }
 function fireStart() {
   if (!selfId || modalOpen()) return;
   firing = true; send({ type: 'action', action: 'fire', yaw: game.aim(mouse.x, mouse.y) }); audio.start().catch(() => {});
@@ -125,6 +127,36 @@ function appendChat(name, text) {
   $('chat-log').scrollTop = $('chat-log').scrollHeight;
 }
 function enterAfterlight() { show('afterlight', false); show('social-panel', true); $('chat-input').focus(); }
+
+let briefingTimer = 0, briefingSignature = '';
+function closeMissionBriefing() {
+  if ($('mission-briefing').classList.contains('hidden') || $('mission-briefing').classList.contains('closing')) return;
+  clearInterval(briefingTimer); clearInput(); send({ type: 'action', action: 'briefing-done' });
+  $('mission-briefing').classList.add('closing');
+  setTimeout(() => { show('mission-briefing', false); $('mission-briefing').classList.remove('closing'); }, 420);
+}
+function openMissionBriefing(current) {
+  if (!current || current.phase !== 'active' || current.briefingDone) return;
+  const signature = current.code + ':' + current.briefingId;
+  if (signature === briefingSignature) return;
+  briefingSignature = signature; clearInterval(briefingTimer); clearInput();
+  const title = ['Cold Start', 'The Relay', 'Last Light'][current.stage] || 'Operation';
+  const descriptions = [
+    'Recover three power cells scattered through the district. Install all three at the central station, then move south to the evacuation zone.',
+    'The relay is failing. Find three cells, restore the grid and keep the route south clear for your crew.',
+    'One final district stands between your crew and extraction. Install three cells at the station, then evacuate south.'
+  ];
+  $('briefing-eyebrow').textContent = 'FIELD DEPLOYMENT / OPERATION 0' + (current.stage + 1);
+  $('briefing-title').textContent = title; $('briefing-description').textContent = descriptions[current.stage] || descriptions[2];
+  show('mission-briefing'); $('mission-briefing').classList.remove('closing');
+  const total = Math.max(0, (current.briefingUntil || (current.time + 16)) - current.time), started = Date.now();
+  const tick = () => { const left = Math.max(0, total - (Date.now() - started) / 1000); $('briefing-countdown').style.transform = 'scaleX(' + (left / Math.max(total, 0.1)) + ')'; if (!left) closeMissionBriefing(); };
+  tick(); briefingTimer = setInterval(tick, 100);
+}
+$('briefing-proceed').addEventListener('click', closeMissionBriefing);
+$('how-understood').addEventListener('change', () => { $('how-continue').disabled = !$('how-understood').checked; });
+$('how-continue').addEventListener('click', () => { if (!$('how-understood').checked) return; localStorage.setItem('blackgrid-how-to-play-v1', '1'); $('how-to-play').classList.add('closing'); setTimeout(() => { show('how-to-play', false); $('how-to-play').classList.remove('closing'); }, 420); });
+
 function join(code = '') {
   if (joining) return;
   if (isPortraitTouch()) { pendingJoinCode = code; show('orientation-gate'); $('orientation-lock').focus(); requestLandscape(); return; }
@@ -151,7 +183,7 @@ function join(code = '') {
       const data = binary ? await new Response(new Blob([event.data]).stream().pipeThrough(new DecompressionStream('gzip'))).text() : event.data;
       message = JSON.parse(data);
       if (binary) ws.binaryState = true;
-    } catch { ws.close(1003, 'Invalid state'); return; }
+    } catch (error) { console.error('BLACKGRID state decode failed:', error); ws.close(4003, 'Invalid state'); return; }
       if (message.type === 'error') { clearTimeout(timeout); show('mission-loading', false); $('lobby-error').textContent = message.message; if (!$('connection-lost').classList.contains('hidden')) $('connection-message').textContent = message.message; setBusy(false); if (!welcomed) ws.close(); return; }
     if (message.type === 'chat') { appendChat(message.name, message.text); return; }
     if (message.type === 'signal') { voice?.signal(message.from, message.signal).catch(() => {}); return; }
@@ -160,7 +192,7 @@ function join(code = '') {
     if (message.type === 'welcome') {
       welcomed = true; clearTimeout(timeout); setBusy(false); show('mission-loading', false); selfId = message.id; lastCode = message.code; state = message.state; lastEvent = Math.max(0, ...state.events.map(e => e.id));
       for (const id of ['lobby', 'connection-lost', 'results', 'pause', 'settings', 'field-guide']) show(id, false);
-      show('hud'); paused = false; document.body.classList.add('playing'); game.applyState(state, selfId); microphoneState(false);
+      show('hud'); paused = false; briefingSignature = ''; document.body.classList.add('playing'); game.applyState(state, selfId); openMissionBriefing(state); microphoneState(false);
       updateHUD(state, state.players.find(p => p.id === selfId));
       const inHub = state.phase === 'hub'; document.body.classList.toggle('social-mode', inHub); show('social-panel', false); show('afterlight', inHub); voice?.close(); voice = ['active', 'hub'].includes(state.phase) ? new VoiceRoom({ selfId, send, onStatus: text => { $('voice-status').textContent = text; } }) : null;
       $('comms-title').textContent = inHub ? 'AFTERLIGHT / SOCIAL LOUNGE' : 'CREW COMMS';
@@ -181,10 +213,13 @@ function join(code = '') {
       for (const event of state.events) {
         if (event.id <= lastEvent) continue;
         lastEvent = event.id; game.effect(event);
-        if (event.type === 'stage') { $('mission-loading-title').textContent = `OPERATION ${String(state.stage + 1).padStart(2, '0')} / DEPLOYING`; show('mission-loading'); setTimeout(() => show('mission-loading', false), 1450); }
+        if (event.type === 'stage') { $('mission-loading-title').textContent = `OPERATION ${String(state.stage + 1).padStart(2, '0')} / DEPLOYING`; show('mission-loading'); setTimeout(() => show('mission-loading', false), 1450); openMissionBriefing(state); }
         if (!['pickup', 'bite', 'turn'].includes(event.type) || event.player === selfId) audio.event(event);
-        if (event.text && !['join', 'heal'].includes(event.type)) toast(event.text, ['bite', 'turn', 'defeat'].includes(event.type));
+        if (event.text && !['join', 'heal', 'kill', 'reinforcements', 'ammo', 'mark', 'stage'].includes(event.type)) toast(event.text, ['bite', 'turn', 'defeat'].includes(event.type));
         if (event.type === 'pickup' && event.player === selfId) toast(`${event.item === 'battery' ? 'POWER CELL SECURED. Return it to the station.' : event.item.toUpperCase() + ' COLLECTED.'}`);
+        if (event.type === 'ammo' && event.player === selfId) toast('DRONE AMMO COLLECTED.');
+        if (event.type === 'power' && state.power < state.required) toast('POWER CELL INSTALLED. ' + (state.required - state.power) + ' MORE TO GO.');
+        if (event.type === 'objective' && state.power >= state.required) toast('GRID ONLINE. HEAD SOUTH TO THE EVACUATION ZONE.');
         if (event.type === 'hit' && event.player === selfId) { $('damage-flash').style.opacity = '0.65'; setTimeout(() => $('damage-flash').style.opacity = '0', 180); }
         if (event.type === 'impact' && event.player === selfId) { $('crosshair').classList.add('hit'); setTimeout(() => $('crosshair').classList.remove('hit'), 110); }
       }
@@ -192,7 +227,7 @@ function join(code = '') {
     }
   };
   let incoming = Promise.resolve();
-  ws.onmessage = event => { incoming = incoming.then(() => receive(event)).catch(() => ws.close(1003, 'Invalid state')); };
+  ws.onmessage = event => { incoming = incoming.then(() => receive(event)).catch(error => { console.error('BLACKGRID message processing failed:', error); ws.close(4003, 'Invalid state'); }); };
   ws.onclose = event => {
     clearTimeout(timeout); clearInterval(pingTimer); setBusy(false); clearInput();
     if (ws !== socket || intentionalClose) return;
@@ -205,7 +240,7 @@ function join(code = '') {
 }
 function leave() {
   intentionalClose = true; clearInput(); if (voice?.active) send({ type: 'voice-left' }); voice?.close(); voice = null; socket?.close(); socket = null; clearInterval(pingTimer);
-  selfId = null; state = null; lastEvent = 0; paused = false; game.reset(); updateViewToggle(); microphoneState(false); show('mission-loading', false); document.body.classList.remove('playing', 'social-mode');
+  selfId = null; state = null; lastEvent = 0; briefingSignature = ''; paused = false; game.reset(); updateViewToggle(); microphoneState(false); show('mission-loading', false); document.body.classList.remove('playing', 'social-mode');
   for (const id of ['hud', 'pause', 'results', 'connection-lost', 'settings', 'field-guide', 'map-overlay', 'afterlight', 'social-panel']) show(id, false);
   show('lobby'); history.replaceState({}, '', location.pathname); refreshRooms();
 }
@@ -280,7 +315,7 @@ window.addEventListener('keydown', event => {
   }
   const actions = { KeyE: 'interact', KeyF: 'light', KeyR: 'reload', KeyH: 'heal' };
   if (actions[event.code]) send({ type: 'action', action: actions[event.code] });
-  if (event.code === 'KeyM') show('map-overlay', $('map-overlay').classList.contains('hidden'));
+  if (event.code === 'KeyM') toggleMap();
 });
 window.addEventListener('keyup', event => {
   if (!keys.delete(event.code) || !selfId) return;
@@ -392,7 +427,7 @@ lookPad.addEventListener('touchmove', event => {
   event.preventDefault(); moveAim(touch.clientX, touch.clientY);
 }, { passive: false });
 function releaseLookTouch(event) {
-  if (lookTouch !== null && [...event.changedTouches].some(touch => touch.identifier === lookTouch)) lookTouch = null;
+  if (lookTouch !== null && [...event.changedTouches].some(touch => touch.identifier === lookTouch)) { lookTouch = null; lookKnob.style.transform = 'translate(0, 0)'; }
 }
 lookPad.addEventListener('touchend', releaseLookTouch, { passive: true });
 lookPad.addEventListener('touchcancel', releaseLookTouch, { passive: true });
@@ -407,10 +442,20 @@ $('touch-fire').addEventListener('touchend', event => { if (fireTouch !== null &
 $('touch-fire').addEventListener('touchcancel', () => { firing = false; firePointer = null; fireTouch = null; }, { passive: true });
 window.addEventListener('touchend', event => { if (fireTouch !== null && [...event.changedTouches].some(touch => touch.identifier === fireTouch)) { firing = false; firePointer = null; fireTouch = null; } }, { passive: true, capture: true });
 window.addEventListener('touchcancel', () => { if (fireTouch !== null) { firing = false; firePointer = null; fireTouch = null; } }, { passive: true, capture: true });
+
+$('large-map').addEventListener('click', event => {
+  if (!selfId || !state) return;
+  const rect = event.currentTarget.getBoundingClientRect();
+  const x = Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width)) * 180 - 90;
+  const z = Math.max(0, Math.min(1, (event.clientY - rect.top) / rect.height)) * 180 - 90;
+  send({ type: 'action', action: 'map-mark', yaw: { x, z } }); toast('TEAM MARKER UPDATED.');
+});
+$('map-unmark').addEventListener('click', () => { if (!selfId) return; send({ type: 'action', action: 'map-unmark' }); toast('YOUR TEAM MARKER CLEARED.'); });
+
 for (const button of document.querySelectorAll('[data-touch-action]')) button.addEventListener('click', () => {
   if (!selfId || modalOpen()) return;
   const action = button.dataset.touchAction;
-  if (action === 'map') show('map-overlay', $('map-overlay').classList.contains('hidden'));
+  if (action === 'map') toggleMap();
   else { send({ type: 'action', action: action === 'interact' ? 'interact' : action }); if (action === 'interact') audio.start().catch(() => {}); }
 });
 setInterval(() => {

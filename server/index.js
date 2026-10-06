@@ -162,7 +162,7 @@ export async function createGameServer({ dev = false, persist = false, maxRooms 
         if (!p) { send(ws, { type: 'error', message: 'This operation is full (15 humans).' }); return; }
         ws.room = room; ws.joined = true; ws.binaryState = message.binaryState === true; clearTimeout(joinTimeout);
         if (ws.account) activeAccounts.set(ws.account.sub, { sub: ws.account.sub, name: ws.account.name, count: (activeAccounts.get(ws.account.sub)?.count || 0) + 1 });
-        send(ws, { type: 'welcome', id: ws.id, code: room.code, state: snapshot(room) });
+        send(ws, { type: 'welcome', id: ws.id, code: room.code, state: snapshot(room, ws.id) });
         return;
       }
       if (!ws.room) return;
@@ -205,7 +205,7 @@ export async function createGameServer({ dev = false, persist = false, maxRooms 
           removeHuman(oldRoom, peer.id);
           addHuman(hub, peer.id, previous.name);
           peer.room = hub;
-          send(peer, { type: 'welcome', id: peer.id, code: hub.code, state: snapshot(hub) });
+          send(peer, { type: 'welcome', id: peer.id, code: hub.code, state: snapshot(hub, peer.id) });
         }
         return;
       }
@@ -213,7 +213,7 @@ export async function createGameServer({ dev = false, persist = false, maxRooms 
         const old = ws.room;
         const next = createRoom(old.code, old.title, old.targetSize, old.learning);
         rooms.set(old.code, next);
-        for (const peer of sockets) if (peer.room === old) { const previous = old.players.get(peer.id); peer.room = next; addHuman(next, peer.id, previous?.name || 'Guest'); send(peer, { type: 'welcome', id: peer.id, code: next.code, state: snapshot(next) }); }
+        for (const peer of sockets) if (peer.room === old) { const previous = old.players.get(peer.id); peer.room = next; addHuman(next, peer.id, previous?.name || 'Guest'); send(peer, { type: 'welcome', id: peer.id, code: next.code, state: snapshot(next, peer.id) }); }
       }
     });
     ws.on('close', () => {
@@ -233,14 +233,11 @@ export async function createGameServer({ dev = false, persist = false, maxRooms 
       room.lastActive = Date.now();
       tick(room, 1 / TICK_RATE);
       if (frame % 2 === 0) {
-        const state = snapshot(room);
-        state.events = state.events.filter(event => event.id > (room.broadcastEventId || 0));
+        const events = room.events.filter(event => event.id > (room.broadcastEventId || 0));
         room.broadcastEventId = room.eventId;
-        const payload = JSON.stringify({ type: 'state', state });
-        const compressed = connected.some(s => s.binaryState) ? gzipSync(payload, { level: 3 }) : null;
-        for (const s of connected) {
-          if (s.bufferedAmount > 1024 * 1024) s.close(1013, 'Connection too slow');
-          else if (s.bufferedAmount < 128000) s.send(s.binaryState ? compressed : payload, { binary: Boolean(s.binaryState), compress: !s.binaryState });
+        for (const peer of connected) {
+          if (peer.bufferedAmount > 1024 * 1024) peer.close(1013, 'Connection too slow');
+          else if (peer.bufferedAmount < 128000) { const state = snapshot(room, peer.id); state.events = events; const payload = JSON.stringify({ type: 'state', state }); peer.send(peer.binaryState ? gzipSync(payload, { level: 3 }) : payload, { binary: Boolean(peer.binaryState), compress: !peer.binaryState }); }
         }
       }
     }

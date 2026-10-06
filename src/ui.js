@@ -4,11 +4,13 @@ export const $ = id => document.getElementById(id);
 export const show = (id, visible = true) => $(id).classList.toggle('hidden', !visible);
 export const clock = seconds => `${Math.floor(seconds / 60).toString().padStart(2, '0')}:${Math.floor(seconds % 60).toString().padStart(2, '0')}`;
 const text = (id, value) => { const node = $(id); if (node.textContent !== String(value)) node.textContent = value; };
+let activeToast = null, toastTimer = 0;
 export function toast(message, danger = false) {
-  const el = document.createElement('div'); el.className = `toast${danger ? ' danger' : ''}`; el.textContent = message;
-  $('toast-stack').append(el);
-  while ($('toast-stack').children.length > 3) $('toast-stack').firstChild.remove();
-  setTimeout(() => el.remove(), 5500);
+  if (!message) return;
+  const stack = $('toast-stack');
+  if (activeToast) { clearTimeout(toastTimer); activeToast.remove(); }
+  activeToast = document.createElement('div'); activeToast.className = 'toast' + (danger ? ' danger' : ''); activeToast.textContent = message; stack.replaceChildren(activeToast);
+  const current = activeToast; toastTimer = setTimeout(() => { if (activeToast === current) { current.remove(); activeToast = null; } }, 4200);
 }
 export function renderRooms(rooms, join) {
   $('room-list').replaceChildren();
@@ -98,6 +100,8 @@ export function drawMap(canvas, state, me) {
   for (const b of WORLD.buildings) { const [x, y] = map(b.x - b.w / 2, b.z - b.d / 2); ctx.fillRect(x, y, b.w * scale, b.d * scale); }
   ctx.strokeStyle = '#85957a33'; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(w / 2, 0); ctx.lineTo(w / 2, w); ctx.stroke();
   const dot = (entity, color, radius) => { const [x, y] = map(entity.x, entity.z); ctx.fillStyle = color; ctx.beginPath(); ctx.arc(x, y, radius, 0, Math.PI * 2); ctx.fill(); };
+  if (state.marker) { const [mx, my] = map(state.marker.x, state.marker.z); ctx.strokeStyle = me.infected ? '#d88463' : '#a8d4bd'; ctx.lineWidth = Math.max(1.2, scale); ctx.beginPath(); ctx.arc(mx, my, 5 * scale, 0, Math.PI * 2); ctx.stroke(); ctx.beginPath(); ctx.moveTo(mx, my - 7 * scale); ctx.lineTo(mx, my + 7 * scale); ctx.moveTo(mx - 7 * scale, my); ctx.lineTo(mx + 7 * scale, my); ctx.stroke(); }
+  for (const d of state.ammoDrops || []) dot(d, '#b6cfb8', Math.max(2, 1.3 * scale));
   for (const s of state.supplies) if (s.type === 'battery') { const [x, y] = map(s.x, s.z); ctx.fillStyle = '#e9ba72'; ctx.save(); ctx.translate(x, y); ctx.rotate(Math.PI / 4); ctx.fillRect(-2 * scale, -2 * scale, 4 * scale, 4 * scale); ctx.restore(); }
   for (const z of state.zombies) if (distance(me, z) < 26) dot(z, '#d27e5f', Math.max(1.4, scale * 0.7));
   for (const car of state.cars) dot(car, '#78867a', Math.max(1.5, scale));
